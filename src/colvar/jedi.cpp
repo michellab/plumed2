@@ -61,26 +61,185 @@ This file provides a template for if you want to introduce a new CV.
 
 */
 //+ENDPLUMEDOC
-   
-class jedi : public Colvar 
+
+// Internal class used to store parameter set
+class jediparameters
 {
-private: 
+public:
+  jediparameters();
+  bool readParams(string &parameters_file);
+  double alpha;
+  double beta;
+  double gamma;
+  double CC_mind;
+  double deltaCC;
+  double Emin;
+  double deltaE;
+  double BSmin;
+  double deltaBS;
+  double CC2_min;
+  double deltaCC2;
+  double GP1_min;
+  double deltaGP1;
+  double GP2_min;
+  double deltaGP2;
+  double r_hydro;
+  double deltar_hydro;
+  double V_max;
+  double deltaV_max;
+  double V_min;
+  double deltaV_min;
+};
+
+// Constructor
+jediparameters::jediparameters()
+{
+  alpha = 0.0;
+  beta = 0.0;
+  gamma = 0.0;
+  CC_mind = 0.0;
+  deltaCC = 0.0;
+  Emin = 0.0;
+  deltaE = 0.0;
+  BSmin = 0.0;
+  deltaBS = 0.0;
+  CC2_min = 0.0;
+  deltaCC2 = 0.0;
+  GP1_min = 0.0;
+  deltaGP1 = 0.0;
+  GP2_min = 0.0;
+  deltaGP2 = 0.0;
+  r_hydro = 0.0;
+  deltar_hydro = 0.0;
+  V_max = 0.0;
+  deltaV_max = 0.0;
+  V_min = 0.0;
+  deltaV_min = 0.0;
+};
+
+bool jediparameters::readParams(string &parameters_file)
+{
+  FILE* fp=fopen(parameters_file.c_str(),"r");
+  if (!fp) return false;
+  string line;
+  while (Tools::getline(fp, line))
+    {
+      if (line[0] == '#')
+	continue;
+      //cout << line << endl;
+      istringstream iss(line);
+      istream_iterator<string> beg(iss), end;
+      vector<string> tokens(beg, end); // done!
+      if (tokens.size() < 2)
+	{
+	  cout << "ABORT ! JEDI parameters file appear malformed check the line below !" << endl; 
+	  cout << line << endl;
+	  exit(-1);
+	}
+      string key = tokens[0];
+      double item = atof(tokens[2].c_str());
+      //cout << " key " << key << " " << " item " << item << endl;
+      // set jedi parameters datastruct
+      // FIXME: Check that all parameters have been set
+      if ( key == string("alpha") )
+	alpha = item;
+      else if ( key == string("beta") )
+	beta = item;
+      else if ( key == string("gamma") )
+	gamma = item;
+      else if ( key == string("CC_mind") )
+	CC_mind = item;
+      else if ( key == string("deltaCC") )
+	deltaCC = item;
+      else if ( key == string("Emin") )
+	Emin = item;
+      else if ( key == string("deltaE") )
+	deltaE = item;
+      else if ( key == string("BSmin") )
+	BSmin = item;
+      else if ( key == string("deltaBS") )
+	deltaBS = item;
+      else if ( key == string("CC2_min") )
+	CC2_min = item;
+      else if ( key == string("deltaCC2") )
+	deltaCC2 = item;
+      else if ( key == string("GP1_min") )
+	GP1_min = item;
+      else if ( key == string("deltaGP1") )
+	deltaGP1 = item;
+      else if ( key == string("GP2_min") )
+	GP2_min = item;
+      else if ( key == string("deltaGP2") )
+	deltaGP2 = item;
+      else if ( key == string("r_hydro") )
+	r_hydro = item;
+      else if ( key == string("deltar_hydro") )
+	deltar_hydro = item;
+      else if ( key == string("V_max") )
+	V_max = item;
+      else if ( key == string("deltaV_max") )
+	deltaV_max = item;
+      else if ( key == string("V_min") )
+	V_min = item;
+      else if ( key == string("deltaV_min") )
+	deltaV_min = item;
+    }
+  fclose(fp);
+
+  cout << "*** Values of the JEDI parameter set loaded in memory: ***" << endl;
+  cout << "alpha = " << alpha << endl;
+  cout << "beta  = " << beta << endl;
+  cout << "gamma = " << gamma << endl;
+  cout << "CC_mind  = " << CC_mind << endl;
+  cout << "deltaCC  = " << deltaCC << endl;
+  cout << "Emin  = " << Emin << endl;
+  cout << "deltaE  = " << deltaE << endl;
+  cout << "BSmin  = " << BSmin << endl;
+  cout << "deltaBS  = " << deltaBS << endl;
+  cout << "CC2_min  = " << CC2_min << endl;
+  cout << "deltaCC2  = " << deltaCC2 << endl;
+  cout << "GP1_min  = " << GP1_min << endl;
+  cout << "deltaGP1  = " << deltaGP1 << endl;
+  cout << "GP2_min  = " << GP2_min << endl;
+  cout << "deltaGP2  = " << deltaGP2 << endl;
+  cout << "r_hydro  = " << r_hydro << endl;
+  cout << "deltar_hydro  = " << deltar_hydro << endl;
+  cout << "V_max  = " << V_max << endl;
+  cout << "deltaV_max  = " << deltaV_max << endl;
+  cout << "V_min  = " << V_min << endl;
+  cout << "deltaV_min  = " << deltaV_min << endl;
+
+  return true;
+}
+
+
+
+class jedi : public Colvar
+{
+private:
   bool pbc;
   //for JEDI
+  vector<AtomNumber> alignmentatoms;//list of atoms used for alignments
+  vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
+  vector<AtomNumber> polaratoms;//list of polar atoms used for CV
+  vector<Vector> ref_pos;// coordinates reference structure for alignment.
+  double ref_com[3];// coordinates of the center of mass of the reference structure for alignments
+  vector<Vector> grid_positions;//coordinates of the reference grid for alignment
+  vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
+  jediparameters params;// parameters druggability estimator
+  //TO CLEAN UP
   vector<vector<int> > rays;
   vector<vector<int> > neighbors;
-  vector<vector<double> > grid_pos;
-  vector<double> pocket;
+  vector<vector<double> > grid_pos;//DEPRECATED replaced by grid_positions
+  vector<double> pocket;//DEPRECATED, replaced by grid_s_off_bsi
   //float score[9];//rotation matrix elements
-  vector<AtomNumber> Apolar;//for plumed.dat file
-  vector<AtomNumber> Polar;// for plumed.dat file
+  vector<AtomNumber> Apolar;//for plumed.dat file DEPRECATED replaced by apolaratoms
+  vector<AtomNumber> Polar;// for plumed.dat file DEPRECATED replaced by polaratoms
+
   double site_com[3];//reference coordinates of the center of mass of the binding site region
   double COM_X, COM_Y, COM_Z;// coordinates of the center of mass of the binding site region
 
-  vector<AtomNumber> alignmentatoms;//list of atoms used for alignments
-  vector<Vector> ref_pos; 
-
-  double ref_com[3];// coordinates of the center of mass of the reference structure for alignments
+ 
 
   double b_grid;//atom number of the first grid point
   double n_grid;// total number of grid points (double)
@@ -107,51 +266,53 @@ PLUMED_REGISTER_ACTION(jedi,"JEDI")
 void jedi::registerKeywords(Keywords& keys)
 {
   Colvar::registerKeywords(keys);
-  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
-  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
-  keys.add("atoms","APOLAR","apolar atoms in the binding site region");
-  keys.add("atoms","POLAR","polar atoms in the binding site region");
-  keys.add("compulsory","COM-X","COM_X of the first snapshot");
-  keys.add("compulsory","COM-Y","COM_Y of the first snapshot");
-  keys.add("compulsory","COM-Z","COM_Z of the first snapshot");
-  keys.add("compulsory","B_grid","number of the first grid point");
-  keys.add("compulsory","N_grid","total number of grid points");
-  keys.add("compulsory","CUTOFF_close","0.22","cutoff close contact (nm)");
-  keys.add("compulsory","CUTOFF_far","0.14","cutoff distance contact : distance (nm)");
-  keys.add("compulsory","CUTOFF_enclosure","3","cutoff distant contact : number of protein atoms within previous");
-  keys.add("compulsory","CUTOFF_hull","3","cutoff hull for enclosure calculation : distance");
-  keys.add("compulsory","CUTOFF_surface","0.21","cutoff suface for enclosure calculation");
-  keys.add("compulsory","CUTOFF_contact","1","cutoff contact for enclosure calculation");
-  keys.add("compulsory","CUTOFF_hydro","0.4","cutoff hydrophobicity : distance");
-  keys.add("compulsory","CUTOFF_con","5","cutoff connectivity : number of neighbors");
-  keys.add("compulsory","dump","used to extract data from the JEDI calculation");
+  //  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
+  //  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
   keys.add("compulsory","SIGMA","0.05","Gaussian width for metadynamics calculations");
   keys.add("compulsory","REFERENCE","a file in pdb format containing the atoms to use for computing rotation matrices.");
+  keys.add("compulsory","APOLAR","a file in pdb format containing the apolar protein atoms to use for the CV.");
+  keys.add("compulsory","POLAR","a file in pdb format containing the polar protein atoms to use for the CV.");
+  keys.add("compulsory","GRID","a file in pdb format containing the grid points to use for the CV.");
+  keys.add("compulsory","PARAMETERS","a file listing the parameters of the JEDI estimator.");
+  keys.add("optional", "SITE","a file listing coordinates of atoms used to define a binding site region.");
 }
 
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true)
 {
-  parseAtomList("APOLAR", Apolar);
-  parseAtomList("POLAR", Polar);
-  parse("COM-X", COM_X);
-  parse("COM-Y", COM_Y);
-  parse("COM-Z", COM_Z);
-  parse("B_grid", b_grid);
-  parse("N_grid", n_grid);
-  parse("CUTOFF_close", cutoff_close);
-  parse("CUTOFF_far", cutoff_far);
-  parse("CUTOFF_enclosure", cutoff_enclosure);
-  parse("CUTOFF_hull",cutoff_hull);
-  parse("CUTOFF_surface", cutoff_surface);
-  parse("CUTOFF_contact", cutoff_contact);
-  parse("CUTOFF_hydro", cutoff_hydro);
-  parse("CUTOFF_con", cutoff_con);
-  parse("dump",dump_matrix);
+  //parseAtomList("APOLAR", Apolar);
+  //parseAtomList("POLAR", Polar);
+  //parse("COM-X", COM_X);
+  //parse("COM-Y", COM_Y);
+  //parse("COM-Z", COM_Z);
+  //parse("B_grid", b_grid);
+  //parse("N_grid", n_grid);
+  //parse("CUTOFF_close", cutoff_close);
+  //parse("CUTOFF_far", cutoff_far);
+  //parse("CUTOFF_enclosure", cutoff_enclosure);
+  //parse("CUTOFF_hull",cutoff_hull);
+  //parse("CUTOFF_surface", cutoff_surface);
+  //parse("CUTOFF_contact", cutoff_contact);
+  //parse("CUTOFF_hydro", cutoff_hydro);
+  //parse("CUTOFF_con", cutoff_con);
+  //parse("dump",dump_matrix);
   parse("SIGMA", delta);
-  string reference;
-  parse("REFERENCE",reference);
+  string reference_file;
+  parse("REFERENCE",reference_file);
+  string apolar_file;
+  parse("APOLAR", apolar_file);
+  string polar_file;
+  parse("POLAR", polar_file);
+  string grid_file;
+  parse("GRID", grid_file);
+  string parameters_file;
+  parse("PARAMETERS", parameters_file);
+  //FIXME: Parse error if site no provided
+  string site_file;
+  parse("SITE", site_file);
+  if (site_file.length() == 0)
+    site_file = "null";
 
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
@@ -163,18 +324,38 @@ pbc(true)
   else 
     log.printf("  without periodic boundary conditions\n");
 
-  addValueWithDerivatives(); setNotPeriodic();
+  addValueWithDerivatives(); setNotPeriodic();//FIXME WHAT TO DO PBC?
+ 
+  //Apolar
+  vector<AtomNumber> Apolar;
+  cout << " Apolar has ? elements " << Apolar.size() << endl;
 
-  PDB pdb;
+  PDB apolar_pdb;
+  if( !apolar_pdb.read(apolar_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+    error("missing input file " + apolar_file );
+
+  apolaratoms = apolar_pdb.getAtomNumbers();
+  cout << " apolaratoms has ? elements " << apolaratoms.size() << endl;  
+
+  //Polar 
+  vector<AtomNumber> Polar;
+  cout << " Polar has ? elements " << Polar.size() << endl;
+
+  PDB polar_pdb;
+  if( !polar_pdb.read(polar_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+    error("missing input file " + polar_file );
+  polaratoms = polar_pdb.getAtomNumbers();
+  cout << " polaratoms has ? elements " << polaratoms.size() << endl;
+
+  // Load up alignment file
+  PDB reference_pdb;
   // read everything in ang and transform to nm if we are not in natural units
-  if( !pdb.read(reference,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
-    error("missing input file " + reference );
-
+  if( !reference_pdb.read(reference_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+    error("missing input file " + reference_file );
   // Save in memory the reference coordinates of the atoms to use for future alignments
-  // MEMORY SAVING GOES HERE
-  const std::vector<Vector> alignment_positions = pdb.getPositions();
+  const std::vector<Vector> alignment_positions = reference_pdb.getPositions();
   // Masses are taken from the occupancy array
-  const std::vector<double> alignment_masses = pdb.getOccupancy();
+  const std::vector<double> alignment_masses = reference_pdb.getOccupancy();
   // Also compute the com of reference coordinates and save for future calcs
   double ref_mass_tot=0.0;
   ref_com[0] = 0.0;
@@ -184,7 +365,7 @@ pbc(true)
     {
       ref_com[0] += alignment_masses[i] * alignment_positions[i][0];
       ref_com[1] += alignment_masses[i] * alignment_positions[i][1];
-      ref_com[2] += alignment_masses[i] * alignment_positions[i][2]; 
+      ref_com[2] += alignment_masses[i] * alignment_positions[i][2];
       ref_pos.push_back( Vector(alignment_positions[i][0], alignment_positions[i][1], alignment_positions[i][2]) );
       ref_mass_tot += alignment_masses[i];
     }
@@ -192,33 +373,91 @@ pbc(true)
   ref_com[1] /= ref_mass_tot;
   ref_com[2] /= ref_mass_tot;
 
-  // Add the alignment atom numbers to the list of atoms to request from the CV 
-  alignmentatoms = pdb.getAtomNumbers();
-  
-  for(unsigned i=0; i < alignmentatoms.size();++i)
-    cout << " i " << i << " alignmentatoms number " << alignmentatoms[i].serial() << endl;
+  // Add the alignment atom numbers to the list of atoms to request from the CV
+  alignmentatoms = reference_pdb.getAtomNumbers();
+  cout << " alignmentatoms has ? elements " << alignmentatoms.size() << endl;    
+  //  for(unsigned i=0; i < alignmentatoms.size();++i)
+  //  cout << " i " << i << " alignmentatoms number " << alignmentatoms[i].serial() << endl;
 
-  vector<AtomNumber> allatoms( Apolar.size() + Polar.size() + alignmentatoms.size() );
+  //vector<AtomNumber> allatoms( Apolar.size() + Polar.size() + alignmentatoms.size() );
+  vector<AtomNumber> allatoms( apolaratoms.size() + polaratoms.size() + alignmentatoms.size() );
 
-  for ( unsigned i = 0; i < Apolar.size() ; ++i) 
-    allatoms[i]=Apolar[i];
+  for ( unsigned i = 0; i < apolaratoms.size() ; ++i)
+    allatoms[i]=apolaratoms[i];
 
-  for ( unsigned i = 0; i < Polar.size() ; ++i) 
-    allatoms[Apolar.size()+i] = Polar[i];
-  
+   for ( unsigned i = 0; i < polaratoms.size() ; ++i)
+    allatoms[apolaratoms.size()+i] = polaratoms[i];
+
   for ( unsigned i=0; i < alignmentatoms.size() ; ++i)
-    allatoms[ Apolar.size() + Polar.size() + i ] = alignmentatoms[i];
+    allatoms[ apolaratoms.size() + polaratoms.size() + i ] = alignmentatoms[i];
 
   requestAtoms(allatoms);
 
-  // FIXME set reference COM of binding site region 
+  // FIXME set reference COM of binding site region
+  // THIS CAN BE DONE BY DOING COM CALCULATION OVER DIFFERENT SET
+  // OF ATOMS (POLAR+APOLAR)
 
   //////////////READING EXTERNAL FILES////////////////////////
-  
+
+  //READ jedi.parameters here
+  params.readParams(parameters_file);
+
+  // (Optional) If specified, load up site file
+  PDB site_pdb;
+    if( !site_pdb.read(site_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+    error("missing input file " + grid_file );
+  // Save in memory the site coordinates of the grid points for future alignments
+  const std::vector<Vector> site_positions = site_pdb.getPositions();
+  cout << " site_positions has ? elements " << site_positions.size() << endl;
+  // Load up grid file
+  PDB grid_pdb;
+  // read everything in ang and transform to nm if we are not in natural units
+  if( !grid_pdb.read(grid_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+    error("missing input file " + grid_file );
+  // Save in memory the reference coordinates of the grid points for future alignments
+  //const std::vector<Vector>
+  grid_positions = grid_pdb.getPositions();
+  //
+  // FIXME: SUBROUTINE TO INSPECT GRID COORDINATES AND REGION COORDINATES
+  //
+
+  //grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.Bsmin, params.deltaBS)
+  //grid_s_off_bsi = reference_pdb.getOccupancy();
+  exit(0);
+  const std::vector<AtomNumber> gridnumbers = grid_pdb.getAtomNumbers();
+  cout << " grid has ? elements " << gridnumbers.size() << endl;
+  // For each grid point...
+  // ...find neighbors
+  // ...find other grid points going in 'rays' calculations (better name)
+  // for above need to know grid parameters so must have read jedi.params before
+  exit(0);
+
+
+  ifstream file2("gridpoints_coord.txt");// file path
+  while (getline(file2, line))
+    {
+      grid_pos.push_back(vector<double>());
+      istringstream ss(line);
+      double value;
+      while (ss >> value)
+	{
+	  grid_pos.back().push_back(value);
+	}
+    }
+
   //
   // rays.txt is used to define indices of neighboring grid points that must be considered 
   // for a the calculation of the exposure of a grid point (eq 7 Cuchillo et al. JCTC 2015) 
-  // 
+  // The way Remi implemented this there are 44 neighboring grid points. This however 
+  // relies on a grid spacing of 0.15 nm and values of CC2min/DeltaCC2, GP1min/DeltaGP1,
+  // GP2min/DeltaGP2
+  //
+  // So here for each grid point, should calculate neighbors based on parameters 
+  // read from JEDI param file, and store results in rays
+  // see Remi's python scripts for further details
+  // Same goes for neighbors which is a quick calculation. Gives 27 (26?) neighboring points, except if near the edge 
+  // of the grid
+
   ifstream file("rays.txt");// file path
   while (getline(file, line))
     {
@@ -246,21 +485,9 @@ pbc(true)
         }
     }
   
-  //
-  // gridpoints_coord.txt contains the initial grid coordinates. 
-  //
-  ifstream file2("gridpoints_coord.txt");// file path
-  while (getline(file2, line))
-    {
-      grid_pos.push_back(vector<double>());
-      istringstream ss(line);
-      double value;
-      while (ss >> value)
-        {
-	  grid_pos.back().push_back(value);
-        }
-    }
   
+  // FIXME: When the initial grid is generated with jedi-setup.py assign this term to the 
+  // beta or occupancy columns. read those from the pdb and store them as constants.
   // 
   //pocket.txt contains the binding site score which remains constant throughout the simulation 
   // (first term of equation 5 in Cuchillo et al. JCTC 2015)
@@ -1280,10 +1507,12 @@ void jedi::calculate(){
       //cout << " jj " << jj << " dVa_dz_polar " << dVa_dz_polar[jj] << " dV_dz_polar " << dV_dz_polar[jj] << " dH_dz_polar[jj] " << dH_dz_polar[jj] << " da_dz " << da_dz << " ds1_dm " << ds1_dm << " ds2_dm " << ds2_dm << endl; 
       //cout << "POLAR jcount " << j+Apolar.size() << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
     }
+
+  //TODO: Flag to output infrequently detailed grid statistics
+  // dx files with updated position and 'activitiy'
+  //                                and 'hydrophobicity'
+
 }//close jedi::calculate
   
 }//close namespace colvar
 }//cloase namespace PLMD
-
-
-
