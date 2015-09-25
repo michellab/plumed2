@@ -46,6 +46,20 @@ namespace PLMD
 namespace colvar
 {
 
+vector<double> set_bs_values(vector<Vector> grid_positions,
+			     vector<Vector> site_positions,
+			     double theta, double Bsmin, double deltaBS);
+
+vector<vector<int> > init_grid_neighbors(vector<Vector> grid_positions,
+					 double GP1_min, double deltaGP1,
+					 double GP2_min, double deltaGP2);
+
+double s_on(double k,double v,double v_min,double delta);
+double s_off(double k,double v,double v_min,double delta);
+double ds_off_dm(double k,double v,double v_min,double delta);
+double ds_off_dk(double k,double v,double v_min,double delta);
+double ds_on_dm(double k,double v,double v_min,double delta);
+double ds_on_dk(double k,double v,double v_min,double delta);
 
 //+PLUMEDOC COLVAR JEDI
 /*
@@ -71,6 +85,7 @@ public:
   double alpha;
   double beta;
   double gamma;
+  double theta;
   double CC_mind;
   double deltaCC;
   double Emin;
@@ -97,6 +112,7 @@ jediparameters::jediparameters()
   alpha = 0.0;
   beta = 0.0;
   gamma = 0.0;
+  theta = 0.0;
   CC_mind = 0.0;
   deltaCC = 0.0;
   Emin = 0.0;
@@ -115,7 +131,7 @@ jediparameters::jediparameters()
   deltaV_max = 0.0;
   V_min = 0.0;
   deltaV_min = 0.0;
-};
+}
 
 bool jediparameters::readParams(string &parameters_file)
 {
@@ -147,6 +163,8 @@ bool jediparameters::readParams(string &parameters_file)
 	beta = item;
       else if ( key == string("gamma") )
 	gamma = item;
+      else if ( key == string("theta") )
+	theta = item;
       else if ( key == string("CC_mind") )
 	CC_mind = item;
       else if ( key == string("deltaCC") )
@@ -190,6 +208,7 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "alpha = " << alpha << endl;
   cout << "beta  = " << beta << endl;
   cout << "gamma = " << gamma << endl;
+  cout << "theta = " << gamma << endl;  
   cout << "CC_mind  = " << CC_mind << endl;
   cout << "deltaCC  = " << deltaCC << endl;
   cout << "Emin  = " << Emin << endl;
@@ -227,9 +246,10 @@ private:
   vector<Vector> grid_positions;//coordinates of the reference grid for alignment
   vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
   jediparameters params;// parameters druggability estimator
+  vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
   //TO CLEAN UP
   vector<vector<int> > rays;
-  vector<vector<int> > neighbors;
+  //vector<vector<int> > neighbors;//DEPRECATED NOT USED??
   vector<vector<double> > grid_pos;//DEPRECATED replaced by grid_positions
   vector<double> pocket;//DEPRECATED, replaced by grid_s_off_bsi
   //float score[9];//rotation matrix elements
@@ -238,8 +258,6 @@ private:
 
   double site_com[3];//reference coordinates of the center of mass of the binding site region
   double COM_X, COM_Y, COM_Z;// coordinates of the center of mass of the binding site region
-
- 
 
   double b_grid;//atom number of the first grid point
   double n_grid;// total number of grid points (double)
@@ -281,22 +299,6 @@ jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true)
 {
-  //parseAtomList("APOLAR", Apolar);
-  //parseAtomList("POLAR", Polar);
-  //parse("COM-X", COM_X);
-  //parse("COM-Y", COM_Y);
-  //parse("COM-Z", COM_Z);
-  //parse("B_grid", b_grid);
-  //parse("N_grid", n_grid);
-  //parse("CUTOFF_close", cutoff_close);
-  //parse("CUTOFF_far", cutoff_far);
-  //parse("CUTOFF_enclosure", cutoff_enclosure);
-  //parse("CUTOFF_hull",cutoff_hull);
-  //parse("CUTOFF_surface", cutoff_surface);
-  //parse("CUTOFF_contact", cutoff_contact);
-  //parse("CUTOFF_hydro", cutoff_hydro);
-  //parse("CUTOFF_con", cutoff_con);
-  //parse("dump",dump_matrix);
   parse("SIGMA", delta);
   string reference_file;
   parse("REFERENCE",reference_file);
@@ -404,11 +406,15 @@ pbc(true)
 
   // (Optional) If specified, load up site file
   PDB site_pdb;
-    if( !site_pdb.read(site_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
-    error("missing input file " + grid_file );
-  // Save in memory the site coordinates of the grid points for future alignments
-  const std::vector<Vector> site_positions = site_pdb.getPositions();
+  std::vector<Vector> site_positions;
+  if ( site_file != string("null") )
+    {
+      if( !site_pdb.read(site_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
+	error("missing input file " + site_file );
+      site_positions = site_pdb.getPositions();
+    }
   cout << " site_positions has ? elements " << site_positions.size() << endl;
+
   // Load up grid file
   PDB grid_pdb;
   // read everything in ang and transform to nm if we are not in natural units
@@ -417,35 +423,19 @@ pbc(true)
   // Save in memory the reference coordinates of the grid points for future alignments
   //const std::vector<Vector>
   grid_positions = grid_pdb.getPositions();
-  //
-  // FIXME: SUBROUTINE TO INSPECT GRID COORDINATES AND REGION COORDINATES
-  //
+  // Set maximum activity of grid points
+  grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
 
-  //grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.Bsmin, params.deltaBS)
-  //grid_s_off_bsi = reference_pdb.getOccupancy();
-  exit(0);
-  const std::vector<AtomNumber> gridnumbers = grid_pdb.getAtomNumbers();
-  cout << " grid has ? elements " << gridnumbers.size() << endl;
+  //const std::vector<AtomNumber> gridnumbers = grid_pdb.getAtomNumbers();
+  //cout << " grid has ? elements " << gridnumbers.size() << endl;
+  neighbors = init_grid_neighbors( grid_positions,
+				   params.GP1_min, params.deltaGP1,
+				   params.GP2_min, params.deltaGP2);
   // For each grid point...
-  // ...find neighbors
-  // ...find other grid points going in 'rays' calculations (better name)
+  // ...find neighbors according to 'rays' style. 
   // for above need to know grid parameters so must have read jedi.params before
   exit(0);
 
-
-  ifstream file2("gridpoints_coord.txt");// file path
-  while (getline(file2, line))
-    {
-      grid_pos.push_back(vector<double>());
-      istringstream ss(line);
-      double value;
-      while (ss >> value)
-	{
-	  grid_pos.back().push_back(value);
-	}
-    }
-
-  //
   // rays.txt is used to define indices of neighboring grid points that must be considered 
   // for a the calculation of the exposure of a grid point (eq 7 Cuchillo et al. JCTC 2015) 
   // The way Remi implemented this there are 44 neighboring grid points. This however 
@@ -470,7 +460,7 @@ pbc(true)
         }
     }
 
-  //
+  // NOT USED ANYWHERE??
   // neighbors.txt contains the index of the 27 neighboring grid points of a griven grid point
   //
   ifstream file1("neighbors.txt");// file path
@@ -484,31 +474,67 @@ pbc(true)
 	  neighbors.back().push_back(value);
         }
     }
-  
-  
-  // FIXME: When the initial grid is generated with jedi-setup.py assign this term to the 
-  // beta or occupancy columns. read those from the pdb and store them as constants.
-  // 
-  //pocket.txt contains the binding site score which remains constant throughout the simulation 
-  // (first term of equation 5 in Cuchillo et al. JCTC 2015)
-  ifstream file3("pocket.txt");// file path
-  while (getline(file3 , line))
-    {
-      istringstream ss(line);
-      double value;
-      while (ss >> value)
-        {
-	  pocket.push_back(value);
-        }
-    }
-  
   // Output file of jedi score and descriptors. 
   ofstream wfile;
   wfile.open("jedi_output.dat");
-  //wfile << "#current Jedi Va hydrophobicity volume/Vmax COM_x COM_y COM_z score[0] score[1] score[2] score[3] score[4] score[5] score[6] score[7] score[8]" << endl;
   wfile << "#current Jedi Va hydrophobicity volume/Vmax COM_x COM_y COM_z rotmat[0][0] rotmat[0][1] rotmat[0][2] rotmat[1][0] rotmat[1][1] rotmat[1][2] rotmat[2][0] rotmat[2][1] rotmat[2][2]" << endl;
   wfile.close();
   //cout << "#current Jedi Va hydrophobicity volume/Vmax COM_x COM_y COM_z score[0] score[1] score[2] score[3] score[4] score[5] score[6] score[7] score[8]" << endl;
+}
+
+vector<double> set_bs_values( vector<Vector> grid_pos,
+			      vector<Vector> site_pos,
+			      double theta, double BSmin, double deltaBS)
+{
+  vector<double> grid_s_off_bsi;
+
+  for (int i=0; i < grid_pos.size(); i++)
+    {
+      grid_s_off_bsi.push_back(1.0);
+    }
+  
+  if (site_pos.size() > 0)
+    {
+      for (int i=0; i < grid_pos.size(); i++)
+	{
+	  double sum=0.0;
+	  for (int j=0; j < site_pos.size(); j++)
+	    {
+	      double dij2 = pow(grid_pos[i][0] - site_pos[j][0],2) +
+		pow(grid_pos[i][1] - site_pos[j][1],2) +
+		pow(grid_pos[i][2] - site_pos[j][2],2);
+	      double dij = sqrt(dij2);
+	      sum = sum + exp(theta/dij);
+	    };
+	  double bsi = theta/log(sum);
+	  //grid_bsi.push_back(bsi);
+	  double ai = s_off(1.0, bsi, BSmin, deltaBS);
+	  cout << " i " << i << " bsi " << bsi << " ai " << ai << endl;
+	  grid_s_off_bsi[i] = ai;
+	}
+    }
+  return grid_s_off_bsi;
+}
+
+vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
+					 double GP1_min, double deltaGP1,
+					 double GP2_min, double deltaGP2)
+{
+  vector<vector<int> > neighbors;
+
+  for (int i=0; i < grid_pos.size(); i++)
+    {
+      for (int j=i+1; j < grid_pos.size(); j++)
+	{
+	  double dij2 = pow(grid_pos[i][0] - grid_pos[j][0],2) +
+	    pow(grid_pos[i][1] - grid_pos[j][1],2) +
+	    pow(grid_pos[i][2] - grid_pos[j][2],2);
+	  //IF CRITERIUM MET...
+	  neighbors[i].push_back(1);
+	  neighbors[j].push_back(1);
+	}
+    }
+  return neighbors;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
