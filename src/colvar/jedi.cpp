@@ -247,7 +247,11 @@ private:
   vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
   jediparameters params;// parameters druggability estimator
   vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
-  //TO CLEAN UP
+  string summary_file;//path to output file
+  int stride;//frequency of output (in timesteps) to summary file;
+  string gridstats_folder;//path to output grid folder;
+  int gridstride;//frequency of output (in timestep) of a grid file;
+  //DEPRECATED
   vector<vector<int> > rays;
   //vector<vector<int> > neighbors;//DEPRECATED NOT USED??
   vector<vector<double> > grid_pos;//DEPRECATED replaced by grid_positions
@@ -292,14 +296,18 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("compulsory","POLAR","a file in pdb format containing the polar protein atoms to use for the CV.");
   keys.add("compulsory","GRID","a file in pdb format containing the grid points to use for the CV.");
   keys.add("compulsory","PARAMETERS","a file listing the parameters of the JEDI estimator.");
-  keys.add("optional", "SITE","a file listing coordinates of atoms used to define a binding site region.");
+  keys.add("compulsory", "SITE","a file listing coordinates of atoms used to define a binding site region.");
+  keys.add("compulsory","STRIDE","100","frequency of output to jedi summary file.");
+  keys.add("compulsory","SUMMARY","jedi_stats.dat","summary file jedi descriptor.");
+  keys.add("compulsory","GRIDSTRIDE","100","frequency of output of jedi grid.");
+  keys.add("compulsory","GRIDFOLDER","jedi-grids", "folder where jedi grids will be output.");
 }
 
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true)
 {
-  parse("SIGMA", delta);
+  parse("SIGMA", delta);//FIXME: Where is this set//used?? Plumed convention??;
   string reference_file;
   parse("REFERENCE",reference_file);
   string apolar_file;
@@ -315,6 +323,17 @@ pbc(true)
   parse("SITE", site_file);
   if (site_file.length() == 0)
     site_file = "null";
+  string stride_string;
+  parse("STRIDE",stride_string);
+  int stride=atoi(stride_string.c_str());
+  string summary_file;
+  parse("SUMMARY",summary_file);
+  string gridstride_string;
+  parse("GRIDSTRIDE",gridstride_string);
+  int gridstride=atoi(gridstride_string.c_str());
+  string gridstats_folder;
+  parse("GRIDFOLDER",gridstats_folder);
+
 
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
@@ -328,9 +347,11 @@ pbc(true)
 
   addValueWithDerivatives(); setNotPeriodic();//FIXME WHAT TO DO PBC?
  
+  cout << "*** Initialisation of JEDI collective variable ***" << endl;
+
   //Apolar
   vector<AtomNumber> Apolar;
-  cout << " Apolar has ? elements " << Apolar.size() << endl;
+  //cout << " Apolar has ? elements " << Apolar.size() << endl;
 
   PDB apolar_pdb;
   if( !apolar_pdb.read(apolar_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
@@ -341,7 +362,7 @@ pbc(true)
 
   //Polar 
   vector<AtomNumber> Polar;
-  cout << " Polar has ? elements " << Polar.size() << endl;
+  //cout << " Polar has ? elements " << Polar.size() << endl;
 
   PDB polar_pdb;
   if( !polar_pdb.read(polar_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
@@ -399,8 +420,6 @@ pbc(true)
   // THIS CAN BE DONE BY DOING COM CALCULATION OVER DIFFERENT SET
   // OF ATOMS (POLAR+APOLAR)
 
-  //////////////READING EXTERNAL FILES////////////////////////
-
   //READ jedi.parameters here
   params.readParams(parameters_file);
 
@@ -423,6 +442,7 @@ pbc(true)
   // Save in memory the reference coordinates of the grid points for future alignments
   //const std::vector<Vector>
   grid_positions = grid_pdb.getPositions();
+  cout << " grid_positions has ? elements " << grid_positions.size() << endl;
   // Set maximum activity of grid points
   grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
 
@@ -431,55 +451,19 @@ pbc(true)
   neighbors = init_grid_neighbors( grid_positions,
 				   params.GP1_min, params.deltaGP1,
 				   params.GP2_min, params.deltaGP2);
-  // For each grid point...
-  // ...find neighbors according to 'rays' style. 
-  // for above need to know grid parameters so must have read jedi.params before
-  exit(0);
-
-  // rays.txt is used to define indices of neighboring grid points that must be considered 
-  // for a the calculation of the exposure of a grid point (eq 7 Cuchillo et al. JCTC 2015) 
-  // The way Remi implemented this there are 44 neighboring grid points. This however 
-  // relies on a grid spacing of 0.15 nm and values of CC2min/DeltaCC2, GP1min/DeltaGP1,
-  // GP2min/DeltaGP2
-  //
-  // So here for each grid point, should calculate neighbors based on parameters 
-  // read from JEDI param file, and store results in rays
-  // see Remi's python scripts for further details
-  // Same goes for neighbors which is a quick calculation. Gives 27 (26?) neighboring points, except if near the edge 
-  // of the grid
-
-  ifstream file("rays.txt");// file path
-  while (getline(file, line))
-    {
-      rays.push_back(vector<int>());
-      istringstream ss(line);
-      int value;
-      while (ss >> value)
-        {
-	  rays.back().push_back(value);
-        }
-    }
-
-  // NOT USED ANYWHERE??
-  // neighbors.txt contains the index of the 27 neighboring grid points of a griven grid point
-  //
-  ifstream file1("neighbors.txt");// file path
-  while (getline(file1, line))
-    {
-      neighbors.push_back(vector<int>());
-      istringstream ss(line);
-      int value;
-      while (ss >> value)
-        {
-	  neighbors.back().push_back(value);
-        }
-    }
-  // Output file of jedi score and descriptors. 
+  //Setup output
+  // JM TODO: Check behavior CV init upon job restart.
   ofstream wfile;
-  wfile.open("jedi_output.dat");
-  wfile << "#current Jedi Va hydrophobicity volume/Vmax COM_x COM_y COM_z rotmat[0][0] rotmat[0][1] rotmat[0][2] rotmat[1][0] rotmat[1][1] rotmat[1][2] rotmat[2][0] rotmat[2][1] rotmat[2][2]" << endl;
+  wfile.open(summary_file.c_str());
+  wfile << "#step \t JEDI \t Va \t Ha \t Va/Vmax \t COM_x \t COM-y \t COM_z \t RotMat[0][0].Rotmat[0][1]....Rotmat[2][2]" << endl;
   wfile.close();
-  //cout << "#current Jedi Va hydrophobicity volume/Vmax COM_x COM_y COM_z score[0] score[1] score[2] score[3] score[4] score[5] score[6] score[7] score[8]" << endl;
+
+  //TODO CHECK IF FOLDER GRIDSTATS_FOLDER EXISTS
+  // IF YES DELETE
+  // CREATE NEW EMPTY FOLDER
+
+  cout << "*** Completed initialisation JEDI collective variable" << endl;
+  exit(0);
 }
 
 vector<double> set_bs_values( vector<Vector> grid_pos,
@@ -500,6 +484,7 @@ vector<double> set_bs_values( vector<Vector> grid_pos,
 	  double sum=0.0;
 	  for (int j=0; j < site_pos.size(); j++)
 	    {
+	      // Precompute first term eq5 Cuchillo et al. JCTC 2015
 	      double dij2 = pow(grid_pos[i][0] - site_pos[j][0],2) +
 		pow(grid_pos[i][1] - site_pos[j][1],2) +
 		pow(grid_pos[i][2] - site_pos[j][2],2);
@@ -509,7 +494,7 @@ vector<double> set_bs_values( vector<Vector> grid_pos,
 	  double bsi = theta/log(sum);
 	  //grid_bsi.push_back(bsi);
 	  double ai = s_off(1.0, bsi, BSmin, deltaBS);
-	  cout << " i " << i << " bsi " << bsi << " ai " << ai << endl;
+	  //cout << " i " << i << " bsi " << bsi << " ai " << ai << endl;
 	  grid_s_off_bsi[i] = ai;
 	}
     }
@@ -520,20 +505,54 @@ vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
 					 double GP1_min, double deltaGP1,
 					 double GP2_min, double deltaGP2)
 {
+  size_t grid_size=grid_pos.size();
   vector<vector<int> > neighbors;
+  neighbors.reserve(grid_size);
+
+  for (int i=0; i < grid_pos.size(); i++)
+    {
+      vector<int> list;
+      neighbors.push_back(list);
+    }
+
+  double dmin = pow(GP1_min,2);
+  double dmax = pow(GP2_min+deltaGP2,2);
 
   for (int i=0; i < grid_pos.size(); i++)
     {
       for (int j=i+1; j < grid_pos.size(); j++)
 	{
+	  //Prepare calculation of eq 7 Cuchillo et atl. JCTC 2015
 	  double dij2 = pow(grid_pos[i][0] - grid_pos[j][0],2) +
 	    pow(grid_pos[i][1] - grid_pos[j][1],2) +
 	    pow(grid_pos[i][2] - grid_pos[j][2],2);
-	  //IF CRITERIUM MET...
-	  neighbors[i].push_back(1);
-	  neighbors[j].push_back(1);
+	  if (dij2 > dmin and dij2 < dmax)
+	    {
+	      //	      cout << " i " << i << " j " << j << " dij2 " << dij2 << " dmin " << dmin << " dmax " << dmax << endl;
+	      neighbors[i].push_back(j);
+	      neighbors[j].push_back(i);
+	    }
 	}
+      //cout << i << " : ";
+      //for (int k=0;k< neighbors[0].size();k++)
+      //	cout << neighbors[i][k] << " ";
+      //cout << endl;
+      //exit(0);
     }
+  // JM comment 09/15. Seem to get at most 38 neighbors but paper said 44. Parameter set?
+  //cout << " Done populating neighbors list" << endl;
+  //exit(0);
+  //for (int i=0; i < grid_pos.size(); i++)
+  //  {
+  //    cout << " i " << i << " : ";
+  //    cout << " has ? elements " << neighbors[i].size() << " : " ;
+  //    for (int j=0; j < neighbors[i].size(); j++)
+  //    	{
+  //    	  cout << neighbors[i][j] << " ";
+  //     	}
+  //    cout << endl;
+  //  }
+
   return neighbors;
 }
 
