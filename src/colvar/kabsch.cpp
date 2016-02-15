@@ -433,7 +433,7 @@ void calculate_rotation_rmsd(double ref_xlist[][3],
   residual = fabs(residual); /* avoids the awkward case of -0.0 */
   *rmsd = sqrt( fabs((double) (residual)*2.0/((double)n_list)) );
 
-  printf("HELLO calculate_rotation_rmsd\n");
+  //printf("HELLO calculate_rotation_rmsd\n");
  
 }
  

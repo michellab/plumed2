@@ -771,25 +771,49 @@ void jedi::calculate(){
 
   int size_grid = grid_positions.size();
   vector<int> active_grid;// array with the index of active grid point (0 if inactive)
-  double activity[size_grid];//array of activity scores for each grid point
-  double s_on_exposure[size_grid];// array of s_on_exposure scores for each grid point
-  double s_on_mind[size_grid];// array with the penalty of close contact
-  double sum_dist[size_grid];// array with the sum of the distances between each grid point and all atoms in the CV
-  double min_dist_list[size_grid];// array with the minimum distance between each grid point and all atoms in the CV
-  double new_x[size_grid];// array with update of x coordinates of each grid points according to translation/rotation
-  double new_y[size_grid];// array with update of y coordinates of each grid points according to translation/rotation
-  double new_z[size_grid];// array with update of z coordinates of each grid points according to translation/rotation
-  double hydrophobicity_list[size_grid];
-  double apolarity[size_grid];// array number of apolar protein atoms around each grid point
-  double polarity[size_grid];// array number of polar protein atoms around each grid point
-  double exposure[size_grid];
+  //double activity[size_grid];//array of activity scores for each grid point
+  vector<double> activity;
+  activity.reserve(size_grid);
+  //double s_on_exposure[size_grid];// array of s_on_exposure scores for each grid point
+  vector<double> s_on_exposure;
+  s_on_exposure.reserve(size_grid);
+  //double s_on_mind[size_grid];// array with the penalty of close contact
+  vector <double> s_on_mind;
+  s_on_mind.reserve(size_grid);
+  //double sum_dist[size_grid];// array with the sum of the distances between each grid point and all atoms in the CV
+  vector<double> sum_dist;
+  sum_dist.reserve(size_grid);
+  //double min_dist_list[size_grid];// array with the minimum distance between each grid point and all atoms in the CV
+  vector<double> min_dist_list;
+  min_dist_list.reserve(size_grid);
+  //double new_x[size_grid];// array with update of x coordinates of each grid points according to translation/rotation
+  vector<double> new_x;
+  new_x.reserve(size_grid);
+  //double new_y[size_grid];// array with update of y coordinates of each grid points according to translation/rotation
+  vector<double> new_y;
+  new_y.reserve(size_grid);
+  //double new_z[size_grid];// array with update of z coordinates of each grid points according to translation/rotation
+  vector<double> new_z;
+  new_z.reserve(size_grid);
+  //double hydrophobicity_list[size_grid];
+  vector<double> hydrophobicity_list;
+  hydrophobicity_list.reserve(size_grid);
 
+  //double apolarity[size_grid];// array number of apolar protein atoms around each grid point
+  vector<double> apolarity;
+  apolarity.reserve(size_grid);
+  //double polarity[size_grid];// array number of polar protein atoms around each grid point
+  vector<double> polarity;
+  polarity.reserve(size_grid);
+  //double exposure[size_grid];
+  vector<double> exposure;
+  exposure.reserve(size_grid);
 
   double Vg          = pow(params.resolution,3); // grid point volume nm^3
-  double beta;
-  beta = 5.0;
+  double beta = 5.0;
+  double min_modr = 0.03;
 
-  cout << "*** Beginning calculation of JEDI collective variable" << endl;
+  //cout << "*** Beginning calculation of JEDI collective variable" << endl;
 
   if(pbc) makeWhole();
 
@@ -818,10 +842,14 @@ void jedi::calculate(){
   // Check the translation of the center of mass of the binding site region
 
   // calculate COM from current snapshot
-  double COM_x=0, sum_x=0;
-  double COM_y=0, sum_y=0;
-  double COM_z=0, sum_z=0;
-  double mass_tot=0;
+  //double COM_x=0, sum_x=0;
+  //double COM_y=0, sum_y=0;
+  //double COM_z=0, sum_z=0;
+
+  //double sum_x=0;
+  //double sum_y=0;
+  //double sum_z=0;
+  //double mass_tot=0;
   // cout << "Checking translation of the center of mass" << endl; 
   //cout << " init sum_x  " << sum_x << " " << sum_y << " " << sum_z << " " << mass_tot << endl;
 
@@ -829,21 +857,21 @@ void jedi::calculate(){
   //cout << " Polar has size " << Polar.size() << endl;
 
   //for( j = 0; j < Apolar.size() + Polar.size() ; j++)
-  int jstart = apolaratoms.size() + polaratoms.size();
-  for( unsigned j = jstart; j < jstart + alignmentatoms.size()  ; j++)
-    {
-      sum_x += ( getMass(j) ) * ( getPosition(j)[0] );
-      sum_y += ( getMass(j) ) * ( getPosition(j)[1] );
-      sum_z += ( getMass(j) ) * ( getPosition(j)[2] );
-      mass_tot += getMass(j);
-      //cout << " J " << j << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
-      //cout << "sum_x " << sum_x << " sum_y " << sum_y << " sum_z " << sum_z << " mass_tot " << mass_tot << endl;
-    }
-
-  COM_x = sum_x/mass_tot;
-  COM_y = sum_y/mass_tot;
-  COM_z = sum_z/mass_tot;
-  cout << "calculating COM over xyz " << COM_x << " " << COM_y << " " << COM_z << endl;    
+  //int jstart = apolaratoms.size() + polaratoms.size();
+  //for( unsigned j = jstart; j < jstart + alignmentatoms.size()  ; j++)
+  //  {
+  //    sum_x += ( getMass(j) ) * ( getPosition(j)[0] );
+  //    sum_y += ( getMass(j) ) * ( getPosition(j)[1] );
+  //    sum_z += ( getMass(j) ) * ( getPosition(j)[2] );
+  //    mass_tot += getMass(j);
+  //    //cout << " J " << j << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
+  //    //cout << "sum_x " << sum_x << " sum_y " << sum_y << " sum_z " << sum_z << " mass_tot " << mass_tot << endl;
+  //  }
+  //
+  //double COM_x = sum_x/mass_tot;
+  //double COM_y = sum_y/mass_tot;
+  //double COM_z = sum_z/mass_tot;
+  //cout << "calculating COM over xyz " << COM_x << " " << COM_y << " " << COM_z << endl;    
 
   // double ref_xlist[][3] : two dimensional array of coordinates for reference conformation   --> check PLUMED RMSD code to see how to store this data
   // double mov_xlist[][3] : two dimensional array of coordinates for current conformation     --> check PLUMED RMSD code to see how to access this data
@@ -855,6 +883,7 @@ void jedi::calculate(){
 
   // Initialise data to pass
   int n_align = alignmentatoms.size();
+  // JM: LOOK UP BEST WAY TO RESERVE 2D ARRAY IN C++
   double ref_xlist[n_align][3];//get this one directly from object
   double mov_xlist[n_align][3];
   double mov_com[3] = {0.0,0.0,0.0};
@@ -892,47 +921,47 @@ void jedi::calculate(){
   mov_to_ref[1] = ref_com[1] - mov_com[1];
   mov_to_ref[2] = ref_com[2] - mov_com[2];
 
-  cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
-  cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
-  cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
+  //  cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
+  //cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
+  //cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
 
 
   // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
-  ofstream wfile000;
-  wfile000.open("mov-xlist-bef.xyz");
-  wfile000 << n_align << endl;
-  wfile000 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
-    }
-  wfile000.close();
+  //ofstream wfile000;
+  //wfile000.open("mov-xlist-bef.xyz");
+  //wfile000 << n_align << endl;
+  //wfile000 << "comment" << endl;
+  //for (int i=0; i < n_align; i++)
+  //  {
+  //    wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+  //  }
+  //wfile000.close();
 
   calculate_rotation_rmsd( ref_xlist, mov_xlist, n_align, mov_com, mov_to_ref, rotmat, &rmsd  );
 
   // Here mov_xlist should end up centered on origin
-  ofstream wfile001;
-  wfile001.open("mov-xlist.xyz");
-  wfile001 << n_align << endl;
-  wfile001 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile001<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
-    }
-  wfile001.close();
+  //ofstream wfile001;
+  //wfile001.open("mov-xlist.xyz");
+  //wfile001 << n_align << endl;
+  //wfile001 << "comment" << endl;
+  //for (int i=0; i < n_align; i++)
+  //  {
+  //    wfile001<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+  //  }
+  //wfile001.close();
 
-  ofstream wfile002;
-  wfile002.open("ref-xlist.xyz");
-  wfile002 << n_align << endl;
-  wfile002 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile002<< "C " << std::fixed << std::setprecision(5) << ref_xlist[i][0]*10 << " " << ref_xlist[i][1]*10 << " " << ref_xlist[i][2]*10 << endl;
-    }
-  wfile002.close();
+  //ofstream wfile002;
+  //wfile002.open("ref-xlist.xyz");
+  //wfile002 << n_align << endl;
+  //wfile002 << "comment" << endl;
+  //for (int i=0; i < n_align; i++)
+  //  {
+  //    wfile002<< "C " << std::fixed << std::setprecision(5) << ref_xlist[i][0]*10 << " " << ref_xlist[i][1]*10 << " " << ref_xlist[i][2]*10 << endl;
+  //  }
+  //wfile002.close();
 
   // Normally expect low rmsd value
-  cout << " The rmsd is " << rmsd << endl;
+  //cout << " The rmsd is " << rmsd << endl;
 
   // OPTIMISATION?
   // For systems that fluctuate a lot in alignement coordinates it may be better 
@@ -949,11 +978,11 @@ void jedi::calculate(){
   //rotmat[2][1] = 0.0;
   //rotmat[2][2] = 1.0;
 
-  cout << "Just called calculated_rotation_rmsd" << endl;
-  cout << "rotmat elements :" << endl;
-  cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
-  cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
-  cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
+  //cout << "Just called calculated_rotation_rmsd" << endl;
+  //cout << "rotmat elements :" << endl;
+  //cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
+  //cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
+  //cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
 
   double new_grid_cog_x, local_grid_cog_x;
   double new_grid_cog_y, local_grid_cog_y;
@@ -962,22 +991,22 @@ void jedi::calculate(){
   new_grid_cog_x = grid_ref_cog[0] - mov_to_ref[0];
   new_grid_cog_y = grid_ref_cog[1] - mov_to_ref[1];
   new_grid_cog_z = grid_ref_cog[2] - mov_to_ref[2];
-  cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
+  //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
   // Now shift origin to mov_com
   local_grid_cog_x = new_grid_cog_x - mov_com[0];
   local_grid_cog_y = new_grid_cog_y - mov_com[1];
   local_grid_cog_z = new_grid_cog_z - mov_com[2];
-  cout << " local grid cog " << local_grid_cog_x << " " << local_grid_cog_y << " " << local_grid_cog_z << endl;
+  //cout << " local grid cog " << local_grid_cog_x << " " << local_grid_cog_y << " " << local_grid_cog_z << endl;
   // Now rotate about origin
   local_grid_cog_x = rotmat[0][0]*local_grid_cog_x + rotmat[1][0]*local_grid_cog_y + rotmat[2][0]*local_grid_cog_z;
   local_grid_cog_y = rotmat[0][1]*local_grid_cog_x + rotmat[1][1]*local_grid_cog_y + rotmat[2][1]*local_grid_cog_z;
   local_grid_cog_z = rotmat[0][2]*local_grid_cog_x + rotmat[1][2]*local_grid_cog_y + rotmat[2][2]*local_grid_cog_z;  
-  cout << " local grid cog " << local_grid_cog_x << " " << local_grid_cog_y << " " << local_grid_cog_z << endl;
+  //cout << " local grid cog " << local_grid_cog_x << " " << local_grid_cog_y << " " << local_grid_cog_z << endl;
   // Now map back to Cartesian
   new_grid_cog_x = local_grid_cog_x + mov_com[0];
   new_grid_cog_y = local_grid_cog_y + mov_com[1];
   new_grid_cog_z = local_grid_cog_z + mov_com[2];
-  cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
+  //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
 
   // Now rotate all grid points at origin and then translate to new cog
   for(int i=0;i< size_grid;i++)
@@ -999,15 +1028,15 @@ void jedi::calculate(){
 
   // Here for debugging purposes, write oordinates of updated grid to a XYZ file
   // This can be used to check that the grid has been trans/roted correctly
-  ofstream wfile;
-  wfile.open("grid-step1.xyz");
-  wfile << size_grid << endl;
-  wfile << "comment" << endl;
-  for (int i=0; i < size_grid; i++)
-    {
-      wfile << "C " << std::fixed << std::setprecision(5) << new_x[i]*10 << " " << new_y[i]*10 << " " << new_z[i]*10 << endl;
-    }
-  wfile.close();
+  //ofstream wfile;
+  //wfile.open("grid-step1.xyz");
+  //wfile << size_grid << endl;
+  //wfile << "comment" << endl;
+  //for (int i=0; i < size_grid; i++)
+  //  {
+  //    wfile << "C " << std::fixed << std::setprecision(5) << new_x[i]*10 << " " << new_y[i]*10 << " " << new_z[i]*10 << endl;
+  //  }
+  //wfile.close();
 
   //cout << "*** Getting ready for STEP 2" << endl;
 
@@ -1043,8 +1072,8 @@ void jedi::calculate(){
 	  // FIXME No PBC check !!  Code may need changes for PBC
 	  // FIXME avoid sqrt if possible
 	  double mod_rij   = sqrt( rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < 0.03)//FIXME: Constants
-	      mod_rij = 0.03;
+	  if (mod_rij < min_modr)//FIXME: Constants
+	      mod_rij = min_modr;
 	  //cout << "grd_x " << grd_x << " y " << grd_y << " z " << grd_z << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
 //      cout << " i " << i << " j " << j << " mod_rij " << mod_rij << endl;
 	  // calculate mindist between grid points and protein atoms (EQUATION 5 2nd term)
@@ -1060,7 +1089,7 @@ void jedi::calculate(){
       //NP[i] = ncoord;
       //s_on_mind[i]=s_on( 1.0, min_dist, cutoff_close, D_close);
       s_on_mind[i] = s_on( 1.0, min_dist, params.CC_mind, params.deltaCC);
-      cout << " i " << i << " mind_dist " << min_dist << " " << params.CC_mind << " " << params.deltaCC << endl;
+      //cout << " i " << i << " mind_dist " << min_dist << " " << params.CC_mind << " " << params.deltaCC << endl;
     }
 
   //FIXME: Comment what is going on here
@@ -1085,8 +1114,8 @@ void jedi::calculate(){
 	  // FIXME: No PBC check !!  Code may need changes for PBC
 	  // OPTME. Distances should be constant so mod_rij result pre-computed !
 	  double mod_rij   = sqrt( rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < 0.03)// FIXME: Distance hardcoded
-	    mod_rij = 0.03;
+	  if (mod_rij < min_modr)// FIXME: Distance hardcoded
+	    mod_rij = min_modr;
 	  // This is equation 7 of the paper so exposure_score is s_on_exposure_i
 	  // OPTM term two and three should be constant and precomputed !!
 	  //cout << " k " << k << " min_dist_list[k] " << min_dist_list[k] << endl;
@@ -1105,16 +1134,16 @@ void jedi::calculate(){
       if (activity[i] > 0.0)
 	active_grid.push_back(i);
       volume += activity[i];
-      cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
+      //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
     }
 
-  cout << "There are " << active_grid.size() << " active grid points " << endl;
+  //cout << "There are " << active_grid.size() << " active grid points " << endl;
   volume *= Vg;//Equation 4 of the paper
   // ----------> "Drug-like" volume
   double s1 = (s_off( 1.0, volume, params.V_max, params.deltaV_max));
   double s2 = (s_on( 1.0, volume, params.V_min, params.deltaV_min));
   double Vdrug_like = s1 * s2;
-  cout << " volume " << volume << " Vdrug_like " << Vdrug_like << endl;
+  //cout << " volume " << volume << " Vdrug_like " << Vdrug_like << endl;
 
   //----------> Hydrophobicity
   double hydrophobicity_tot=0.0;
@@ -1148,12 +1177,12 @@ void jedi::calculate(){
 	  hydrophobicity_list[active_grid[i]]=0.;
 
 
-      cout << " i " << i << " active grid point " << active_grid[i] << " apolar " << apolar << " polar " << polar << endl;
-      cout << " hydrophobicity " << hydrophobicity_list[active_grid[i]] <<  endl;
+      //      cout << " i " << i << " active grid point " << active_grid[i] << " apolar " << apolar << " polar " << polar << endl;
+      //cout << " hydrophobicity " << hydrophobicity_list[active_grid[i]] <<  endl;
       hydrophobicity_tot+=hydrophobicity_list[active_grid[i]]*activity[active_grid[i]];
     }
 
-  cout << " hydrophobicity_tot " << hydrophobicity_tot << " volume " << volume << endl;
+  //  cout << " hydrophobicity_tot " << hydrophobicity_tot << " volume " << volume << endl;
 
   // JM Feb 2016. Error in paper. Equation 10 numerator needs to be multiplied by Vg to get units
   double hydrophobicity;
@@ -1168,7 +1197,7 @@ void jedi::calculate(){
   double Jedi=Vdrug_like*(params.alpha*volume/params.V_max + params.beta*hydrophobicity + params.gamma);//JEDI score without connectivity
   setValue(Jedi);
 
-  cout << "Jedi score is " << Jedi << " alpha " << params.alpha << " volume " << volume << " Vmax " << params.V_max << " beta " << params.beta << " hydrophobicity " << hydrophobicity << " gamma " << params.gamma << endl;
+  //cout << "Jedi score is " << Jedi << " alpha " << params.alpha << " volume " << volume << " Vmax " << params.V_max << " beta " << params.beta << " hydrophobicity " << hydrophobicity << " gamma " << params.gamma << endl;
   //exit(0);
 
   // cout.precision(9);
@@ -1178,7 +1207,7 @@ void jedi::calculate(){
   // << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " << score[7] << " " << score[8] <<endl;
   
 
-  cout << " we are at step " << getStep() << " we dump every " << stride << endl;
+  //cout << " we are at step " << getStep() << " we dump every " << stride << endl;
   int step= getStep();
   int mod =fmod(step,stride);
   if (!mod)
@@ -1224,43 +1253,88 @@ void jedi::calculate(){
 
 
   //FIXME: Initialise arrays with '0' 
-  double dVdrug_like_dx_apolar[apolaratoms.size()];
-  double dVdrug_like_dx_polar[polaratoms.size()];
-
-  double dV_dx_apolar[apolaratoms.size()];
-  double dV_dx_polar[polaratoms.size()];
-
-  double dVdrug_like_dy_apolar[apolaratoms.size()];
-  double dVdrug_like_dy_polar[polaratoms.size()];
-
-  double dV_dy_apolar[apolaratoms.size()];
-  double dV_dy_polar[polaratoms.size()];
-
-  double dVdrug_like_dz_apolar[apolaratoms.size()];
-  double dVdrug_like_dz_polar[polaratoms.size()];
-
-  double dV_dz_apolar[apolaratoms.size()];
-  double dV_dz_polar[polaratoms.size()];
-
-  double dH_dx_apolar[apolaratoms.size()];
-  double dH_dx_polar[polaratoms.size()];
-
-  double dH_dy_apolar[apolaratoms.size()];
-  double dH_dy_polar[polaratoms.size()];
-
-  double dH_dz_apolar[apolaratoms.size()];
-  double dH_dz_polar[polaratoms.size()];
-
+  //double dVdrug_like_dx_apolar[apolaratoms.size()];
+  vector<double> dVdrug_like_dx_apolar;
+  dVdrug_like_dx_apolar.resize(apolaratoms.size());
+  //double dVdrug_like_dx_polar[polaratoms.size()];
+  vector<double> dVdrug_like_dx_polar;
+  dVdrug_like_dx_polar.resize(polaratoms.size());
+  //double dV_dx_apolar[apolaratoms.size()];
+  vector<double> dV_dx_apolar;
+  dV_dx_apolar.resize(apolaratoms.size());
+  //double dV_dx_polar[polaratoms.size()];
+  vector<double> dV_dx_polar;
+  dV_dx_polar.resize(polaratoms.size());
+  //double dVdrug_like_dy_apolar[apolaratoms.size()];
+  vector<double> dVdrug_like_dy_apolar;
+  dVdrug_like_dy_apolar.resize(apolaratoms.size());
+  //double dVdrug_like_dy_polar[polaratoms.size()];
+  vector<double> dVdrug_like_dy_polar;
+  dVdrug_like_dy_polar.resize(polaratoms.size());
+  //double dV_dy_apolar[apolaratoms.size()];
+  vector<double> dV_dy_apolar;
+  dV_dy_apolar.resize(apolaratoms.size());
+  //double dV_dy_polar[polaratoms.size()];
+  vector<double> dV_dy_polar;
+  dV_dy_polar.resize(polaratoms.size());
+  //double dVdrug_like_dz_apolar[apolaratoms.size()];
+  vector<double> dVdrug_like_dz_apolar;
+  dVdrug_like_dz_apolar.resize(apolaratoms.size());
+  //double dVdrug_like_dz_polar[polaratoms.size()];
+  vector<double> dVdrug_like_dz_polar;
+  dVdrug_like_dz_polar.resize(polaratoms.size());
+  //double dV_dz_apolar[apolaratoms.size()];
+  vector<double> dV_dz_apolar;
+  dV_dz_apolar.resize(apolaratoms.size());
+  //double dV_dz_polar[polaratoms.size()];
+  vector<double> dV_dz_polar;
+  dV_dz_polar.resize(polaratoms.size());
+  //double dH_dx_apolar[apolaratoms.size()];
+  vector<double> dH_dx_apolar;
+  dH_dx_apolar.resize(apolaratoms.size());
+  //double dH_dx_polar[polaratoms.size()];
+  vector<double> dH_dx_polar;
+  dH_dx_polar.resize(polaratoms.size());
+  //JM 15/02/16 I AM HERE
+  //double dH_dy_apolar[apolaratoms.size()];
+  vector<double> dH_dy_apolar;
+  dH_dy_apolar.resize(apolaratoms.size());
+  //double dH_dy_polar[polaratoms.size()];
+  vector<double> dH_dy_polar;
+  dH_dy_polar.resize(polaratoms.size());
+  //double dH_dz_apolar[apolaratoms.size()];
+  vector<double> dH_dz_apolar;
+  dH_dz_apolar.resize(apolaratoms.size());
+  //double dH_dz_polar[polaratoms.size()];
+  vector<double> dH_dz_polar;
+  dH_dz_polar.resize(polaratoms.size());
   double dHa_dx, dHa_dy, dHa_dz, dP_dm, ds1_dm;
 
   //FIXME: Magic numbers
-  double da_dx_apolar[1200][apolaratoms.size()];
-  double da_dy_apolar[1200][apolaratoms.size()];
-  double da_dz_apolar[1200][apolaratoms.size()];
-
-  double da_dx_polar[1200][polaratoms.size()];
-  double da_dy_polar[1200][polaratoms.size()];
-  double da_dz_polar[1200][polaratoms.size()];
+  //double da_dx_apolar[active_grid.size()][apolaratoms.size()];
+  //double da_dx_apolar[active_grid.size() * apolaratoms.size() + 1];
+  vector< double > da_dx_apolar;
+  da_dx_apolar.resize(active_grid.size() * apolaratoms.size());
+  //double da_dy_apolar[active_grid.size()][apolaratoms.size()];
+  //double da_dy_apolar[active_grid.size() * apolaratoms.size()];
+  vector< double > da_dy_apolar;
+  da_dy_apolar.resize(active_grid.size() * apolaratoms.size());
+  //double da_dz_apolar[active_grid.size()][apolaratoms.size()];
+  //double da_dz_apolar[active_grid.size() * apolaratoms.size() + 1];
+  vector< double > da_dz_apolar;
+  da_dz_apolar.resize(active_grid.size() * apolaratoms.size());
+  //double da_dx_polar[active_grid.size()][polaratoms.size()];
+  //double da_dx_polar[active_grid.size() * polaratoms.size() + 1];
+  vector< double > da_dx_polar;
+  da_dx_polar.resize(active_grid.size() * polaratoms.size());
+  //double da_dy_polar[active_grid.size()][polaratoms.size()];
+  //double da_dy_polar[active_grid.size() * polaratoms.size() + 1];
+  vector< double > da_dy_polar;
+  da_dy_polar.resize(active_grid.size() * polaratoms.size());
+  //double da_dz_polar[active_grid.size()][polaratoms.size()];
+  //double da_dz_polar[active_grid.size() * polaratoms.size() + 1];
+  vector< double > da_dz_polar;
+  da_dz_polar.resize(active_grid.size() * polaratoms.size());
 
   double dSenclosure_dx, dSmind_dx, dSenclosure_dy, dSmind_dy, dSenclosure_dz, dSmind_dz;//dSmin: just for CC pemalty
   double dsmind_dx, dsmind_dy, dsmind_dz;//dsmin: just for solvent exposed pemalty
@@ -1270,14 +1344,14 @@ void jedi::calculate(){
 
   //----------> da_dx, da_dy, da_dz ( activity )
 
-  cout << " loop i over active_grid.size() is " << active_grid.size() << endl; 
+  //cout << " loop i over active_grid.size() is " << active_grid.size() << endl; 
   for( unsigned i = 0; i < active_grid.size() ; i++)
     {
       double grd_x = new_x[active_grid[i]];
       double grd_y = new_y[active_grid[i]];
       double grd_z = new_z[active_grid[i]];
       // da_dx_apolar
-      cout << " loop j over apolaratoms is " << apolaratoms.size() << endl;
+      //cout << " i " << i << " loop j over apolaratoms is " << apolaratoms.size() << endl;
       for( unsigned j = 0; j < apolaratoms.size() ; j++)
 	{
 	  //rij[0]    = new_x[active_grid[i]] - getPosition(j)[0];
@@ -1287,8 +1361,8 @@ void jedi::calculate(){
 	  rij[1]    = grd_y - getPosition(j)[1];
 	  rij[2]    = grd_z - getPosition(j)[2];
 	  double mod_rij   = sqrt( rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < 0.03)// FIXME: Constant
-	    mod_rij = 0.03;
+	  if (mod_rij < min_modr)// FIXME: Constant
+	    mod_rij = min_modr;
 
 	  dsum_enclosure_x = 0.0;
 
@@ -1329,11 +1403,11 @@ void jedi::calculate(){
 	      double mod_rjk   = sqrt(rjk[0]*rjk[0]+rjk[1]*rjk[1]+rjk[2]*rjk[2]);//protein j and grid point k
 	      double mod_rik   = sqrt(rik[0]*rik[0]+rik[1]*rik[1]+rik[2]*rik[2]);//grid point i and grid point k
 	      //FIXME Magic numbers
-	      if (mod_rjk < 0.03)
-		mod_rjk = 0.03;
+	      if (mod_rjk < min_modr)
+		mod_rjk = min_modr;
 
-	      if (mod_rik < 0.03)
-		mod_rik = 0.03;
+	      if (mod_rik < min_modr)
+		mod_rik = min_modr;
 
 	      s1_ray    = s_on( 1.0, mod_rik, params.GP1_min, params.deltaGP1);
 	      s2_ray    = s_off(1.0, mod_rik, params.GP2_min, params.deltaGP2);
@@ -1360,20 +1434,24 @@ void jedi::calculate(){
 	    }
 	  dSenclosure_dm     = ds_on_dm( 1.0, exposure[active_grid[i]], params.Emin, params.deltaE);
 	  dSenclosure_dx     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_x;
-	  da_dx_apolar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) * grid_s_off_bsi[active_grid[i]];
+	  //cout << "doing da_dx_apolar" << endl;
+	  da_dx_apolar[i*apolaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) * grid_s_off_bsi[active_grid[i]];
 
 	  dSenclosure_dy     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_y;
-	  da_dy_apolar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
+	  //cout << "doing da_dy_apolar" << endl;
+	  //cout << " i " << i << " j " << j << " active_grid " << active_grid.size() << " apolaratoms.size() " << apolaratoms.size() << " index " << i*apolaratoms.size()+j << endl;
+	  da_dy_apolar[i*apolaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
 
 	  dSenclosure_dz     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_z;
-	  da_dz_apolar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
+	  //cout << "doing da_dz_apolar" << endl;
+	  da_dz_apolar[i*apolaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
 
 	  dsum_enclosure_x   = 0.;
 	  dsum_enclosure_y   = 0.;
 	  dsum_enclosure_z   = 0.;
 	}
       // da_dx_polar
-      cout << " loop j over polaratoms.size() is " << polaratoms.size() << endl;
+      //cout << " loop j over polaratoms.size() is " << polaratoms.size() << endl;
       for( unsigned j = 0; j < polaratoms.size() ; j++) 
 	{
 	  //jj = j - Apolar.size();
@@ -1382,8 +1460,8 @@ void jedi::calculate(){
 	  rij[1]    = new_y[active_grid[i]] - getPosition(apolaratoms.size() + j)[1];
 	  rij[2]    = new_z[active_grid[i]] - getPosition(apolaratoms.size() + j)[2];
 	  double mod_rij   = sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < 0.03)// FIXME constant
-	      mod_rij = 0.03;
+	  if (mod_rij < min_modr)// FIXME constant
+	      mod_rij = min_modr;
 
 	  dmind_dr = ((beta*beta)*(exp(beta/mod_rij))) / ((mod_rij*mod_rij) * (sum_dist[active_grid[i]]) * pow((std::log(sum_dist[active_grid[i]])),2));
 	  dSmind_dm = ds_on_dm(1.0,min_dist_list[active_grid[i]],params.CC_mind,params.deltaCC) * 1.0/params.deltaCC;
@@ -1401,7 +1479,7 @@ void jedi::calculate(){
 	  dr_dz     = - (new_z[active_grid[i]]-getPosition(apolaratoms.size()+j)[2]) / (mod_rij);
 	  dmind_dz  = dmind_dr*(dr_dz);
 	  dSmind_dz = dSmind_dm * dmind_dz;
-	  // cout << " loop l over rays "<< endl;
+	  //cout << " loop l over rays "<< endl;
 	  vector<int> neighbors_i = neighbors[active_grid[i]];
 	  for (unsigned l = 0; l < neighbors_i.size() ; l++)
 	    //for( l = 0; l < 44 ; l++)
@@ -1418,11 +1496,11 @@ void jedi::calculate(){
 	      // FIXME No PBC check !!  Code may need changes for PBC 
 	      double mod_rjk   = sqrt(rjk[0]*rjk[0]+rjk[1]*rjk[1]+rjk[2]*rjk[2]);//protein j and grid point k
 	      double mod_rik   = sqrt(rik[0]*rik[0]+rik[1]*rik[1]+rik[2]*rik[2]);//grid point i and grid point k
-	      if (mod_rjk < 0.03)
-		mod_rjk = 0.03;
+	      if (mod_rjk < min_modr)
+		mod_rjk = min_modr;
 
-	      if (mod_rik < 0.03)
-		mod_rik = 0.03;
+	      if (mod_rik < min_modr)
+		mod_rik = min_modr;
 
 	      s1_ray    = s_on(1.0,mod_rik,params.GP1_min,params.deltaGP1);
 	      s2_ray    = s_off(1.0,mod_rik,params.GP2_min,params.deltaGP2);
@@ -1446,12 +1524,15 @@ void jedi::calculate(){
 	    }
 	  dSenclosure_dm     = ds_on_dm(1.0,exposure[active_grid[i]],params.Emin,params.deltaE) * 1.0/params.deltaE;
 	  dSenclosure_dx     = dSenclosure_dm * dsum_enclosure_x;
-	  da_dx_polar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) *grid_s_off_bsi[active_grid[i]];
+	  //cout << "doing da_dx_polar" << endl;
+	  da_dx_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) *grid_s_off_bsi[active_grid[i]];
 	  dSenclosure_dy     = dSenclosure_dm * dsum_enclosure_y;
-	  da_dy_polar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
+	  //cout << "doing da_dy_polar" << endl;
+	  da_dy_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
 	  dSenclosure_dz     = dSenclosure_dm * dsum_enclosure_z;
-	  da_dz_polar[i][j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
-	  //cout << " i " << i << " j " << j << " da_dz_polar " << da_dz_polar[i][j] << " s_on_exposure[active_grid[i]] " << s_on_exposure[active_grid[i]] << " dSmind_dz " << dSmind_dz << " s_on_mind[active_grid[i] " << s_on_mind[active_grid[i]] << " dSenclosure_dz " << dSenclosure_dz << " grid_s_off_bsi[active_grid[i]] " << grid_s_off_bsi[active_grid[i]] << endl;
+	  //cout << "doing da_dz_polar" << endl;
+	  da_dz_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
+	  //cout << " i " << i << " j " << j << " da_dz_polar " << da_dz_polar[i*active_grid.size()+j] << " s_on_exposure[active_grid[i]] " << s_on_exposure[active_grid[i]] << " dSmind_dz " << dSmind_dz << " s_on_mind[active_grid[i] " << s_on_mind[active_grid[i]] << " dSenclosure_dz " << dSenclosure_dz << " grid_s_off_bsi[active_grid[i]] " << grid_s_off_bsi[active_grid[i]] << endl;
 	  dsum_enclosure_x   = 0.;
 	  dsum_enclosure_y   = 0.;
 	  dsum_enclosure_z   = 0.;
@@ -1460,7 +1541,7 @@ void jedi::calculate(){
 
   double vx,vy,vz;
   // apolar atoms first
-  cout << " summing partial derivatives " << endl;
+  //cout << " summing partial derivatives " << endl;
   for( unsigned j = 0; j < apolaratoms.size(); j++)
     {
       //jj      = j ;
@@ -1473,9 +1554,9 @@ void jedi::calculate(){
       for( unsigned i = 0; i < active_grid.size() ; i++)
 	{
 	  int gridpoint = active_grid[i];
-	  da_dx += da_dx_apolar[i][j];
-	  da_dy += da_dy_apolar[i][j];
-	  da_dz += da_dz_apolar[i][j];
+	  da_dx += da_dx_apolar[i*apolaratoms.size()+j];
+	  da_dy += da_dy_apolar[i*apolaratoms.size()+j];
+	  da_dz += da_dz_apolar[i*apolaratoms.size()+j];
 
 	  // Does this ever happen??
 	  if( (polarity[gridpoint] + apolarity[gridpoint]) > 0.)
@@ -1487,13 +1568,13 @@ void jedi::calculate(){
 	      //FIXME: ceiling to mod_rij ?
 
 	      dAp_dm  = ds_off_dm(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro);//same value for x,y,z
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_apolar[i][j]);//!!! dynamic allocation
+	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
 	      dHa_dx += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
 	      // FIXME: Awkward to call this dAp_dx if operating on y
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dy_apolar[i][j]);//!!! dynamic allocation
+	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dy_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
 	      dHa_dy += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
 	      // FIXME: Same as above but for z
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dz_apolar[i][j]);//!!! dynamic allocation
+	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dz_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
 	      dHa_dz += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
 	    }
 	}
@@ -1530,7 +1611,7 @@ void jedi::calculate(){
       //cout << Jedi << " " << Vdrug_like << " " << dVdrug_like_dx_apolar[j] << " " << a << " " << volume << " " << b << " " << hydrophobicity << " " << constant << " " << dV_dx_apolar[j] << " " << dH_dx_apolar[j] << endl;
       //cout << "j " << j << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
       setAtomsDerivatives(j,Vector(vx,vy,vz));
-      cout << "APOLAR j " << j << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl; 
+      //cout << "APOLAR j " << j << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl; 
     }
 
   // now polar atoms
@@ -1544,12 +1625,13 @@ void jedi::calculate(){
       da_dx = 0.;
       da_dy = 0.;
       da_dz = 0.;
+      //cout << "Doing polar " << j << endl;
       for( unsigned i = 0; i < active_grid.size() ; i++)
 	{
 	  int gridpoint = active_grid[i];
-	  da_dx += da_dx_polar[i][j];
-	  da_dy += da_dy_polar[i][j];
-	  da_dz += da_dz_polar[i][j];
+	  da_dx += da_dx_polar[i*polaratoms.size()+j];
+	  da_dy += da_dy_polar[i*polaratoms.size()+j];
+	  da_dz += da_dz_polar[i*polaratoms.size()+j];
 
 	  if ( (polarity[gridpoint] + apolarity[gridpoint]) > 0.)
 	    {
@@ -1560,13 +1642,13 @@ void jedi::calculate(){
 	      //FIXME: magic number
 	      std::max(mod_rij, 0.05);
 	      dP_dm   = ds_off_dm(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro);
-	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_polar[i][j] );
+	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_polar[i*polaratoms.size()+j] );
 	      dHa_dx += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dx )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
 	      //FIXME: name should be dy
-	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_polar[i][j] );
+	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dy_polar[i*polaratoms.size()+j] );
 	      dHa_dy += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dx )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
 	      // FIXME name should be dz
-	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_polar[i][j] );
+	      dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dz_polar[i*polaratoms.size()+j] );
 	      dHa_dz += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dx )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
 	    }
 	}
@@ -1603,14 +1685,14 @@ void jedi::calculate(){
 
       setAtomsDerivatives(j+apolaratoms.size(),Vector(vx,vy,vz));
       //cout << " jj " << jj << " dVdrug_like_dz_polar " << dVdrug_like_dz_polar[jj] << " dV_dz_polar " << dV_dz_polar[jj] << " dH_dz_polar[jj] " << dH_dz_polar[jj] << " da_dz " << da_dz << " ds1_dm " << ds1_dm << " ds2_dm " << ds2_dm << endl; 
-      cout << "POLAR jcount " << j+apolaratoms.size() << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
+      //cout << "POLAR jcount " << j+apolaratoms.size() << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
     }
 
   //TODO: Flag to output infrequently detailed grid statistics
   // dx files with updated position and 'activitiy'
   //                                and 'hydrophobicity'
 
-  exit(0);
+  //exit(0);
 
 }//close jedi::calculate
   
