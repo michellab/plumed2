@@ -332,7 +332,7 @@ pbc(true)
   parse("STRIDE",stride_string);
   stride=atoi(stride_string.c_str());
   cout << "STRIDE FROM INPUT IS " << stride << endl;
-  string summary_file;
+  //string summary_file;
   parse("SUMMARY",summary_file);
   string gridstride_string;
   parse("GRIDSTRIDE",gridstride_string);
@@ -473,7 +473,7 @@ pbc(true)
   // JM TODO: Check behavior CV init upon job restart.
   ofstream wfile;
   wfile.open(summary_file.c_str());
-  wfile << "#step \t JEDI \t Va \t Ha \t Va/Vmax \t COM_x \t COM-y \t COM_z \t RotMat[0][0].Rotmat[0][1]....Rotmat[2][2]" << endl;
+  wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t COM_x \t COM-y \t COM_z \t RotMat[0][0].Rotmat[0][1]....Rotmat[2][2]" << endl;
   wfile.close();
 
   //TODO CHECK IF FOLDER GRIDSTATS_FOLDER EXISTS
@@ -661,7 +661,9 @@ vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
     }
   else
     {
-      s = 4*k*m*(pow((1.-pow(m,2)),2)) - 4*k*m*(1.-pow(m,2))*((1.+2*(pow(m,2))));
+      //s = 4*k*m*(pow((1.-pow(m,2)),2)) - 4*k*m*(1.-pow(m,2))*((1.+2*(pow(m,2))));
+      double m2=m*m;
+      s = 4*k*m*( (1.-m2)*(1-m2) - (1.-m2)*(1.+2*m2) );
     }
   return s;
  }
@@ -680,7 +682,9 @@ vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
     }
   else
     {
-      s = (pow((1.-pow(m,2)),2)) * ((1.+2*(pow(m,2))));
+      //s = (pow((1.-pow(m,2)),2)) * ((1.+2*(pow(m,2))));
+      double m2=m*m;
+      s = ( (1-m2)*(1-m2) ) * (1+2*m2);
     }
   return s;
  }
@@ -699,7 +703,9 @@ vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
     }
   else
     {
-      s = -4*k*m*(pow((1.-pow(m,2)),2)) + 4*k*m*(1.-pow(m,2))*((1.+2*(pow(m,2))));
+      //s = -4*k*m*(pow((1.-pow(m,2)),2)) + 4*k*m*(1.-pow(m,2))*((1.+2*(pow(m,2))));
+      double m2=m*m;
+      s = -4*k*m*( (1.-m2)*(1-m2) - (1.-m2)*(1.+2*m2) );
     }
   return s;
  }
@@ -718,7 +724,9 @@ vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
     }
   else
     {
-      s = 1. - ( (pow((1.-pow(m,2)),2)) * ((1.+2*(pow(m,2)))) );
+      //s = 1. - ( (pow((1.-pow(m,2)),2)) * ((1.+2*(pow(m,2)))) );
+      double m2=m*m;
+      s = 1 -(1-m2)*(1-m2)*(1+2*m2);
     }
   return s;
  }
@@ -809,7 +817,7 @@ void jedi::calculate(){
   vector<double> exposure;
   exposure.reserve(size_grid);
 
-  double Vg          = pow(params.resolution,3); // grid point volume nm^3
+  double Vg   = pow(params.resolution,3); // grid point volume nm^3
   double beta = 5.0;
   double min_modr = 0.03;
 
@@ -1025,7 +1033,7 @@ void jedi::calculate(){
   //rotmat[2][1] = 0.0;
   //rotmat[2][2] = 1.0;
 
-  cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
+  //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
 
   // Now rotate all grid points at origin and then translate to new cog
   for(int i=0;i< size_grid;i++)
@@ -1091,7 +1099,7 @@ void jedi::calculate(){
 	  // FIXME No PBC check !!  Code may need changes for PBC
 	  // FIXME avoid sqrt if possible
 	  double mod_rij   = sqrt( rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < min_modr)//FIXME: Constants
+	  if (mod_rij < min_modr)
 	      mod_rij = min_modr;
 	  //cout << "grd_x " << grd_x << " y " << grd_y << " z " << grd_z << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
 //      cout << " i " << i << " j " << j << " mod_rij " << mod_rij << endl;
@@ -1145,7 +1153,7 @@ void jedi::calculate(){
 	  exposure_score += term1 * term2 * term3;
 	}
       exposure[i] = exposure_score;
-      s_on_exposure[i]  = ( s_on( 1.0, exposure_score, params.Emin, params.deltaE));
+      s_on_exposure[i]  = s_on( 1.0, exposure_score, params.Emin, params.deltaE);
       // This now gives the activity value from equation 5
       activity[i] = s_on_mind[i] * s_on_exposure[i] * grid_s_off_bsi[i];
 
@@ -1157,6 +1165,8 @@ void jedi::calculate(){
     }
 
   //cout << "There are " << active_grid.size() << " active grid points " << endl;
+  double sum_activity = volume;
+  double sum_activity2 = sum_activity*sum_activity;
   volume *= Vg;//Equation 4 of the paper
   // ----------> "Drug-like" volume
   double s_off_V = (s_off( 1.0, volume, params.V_max, params.deltaV_max));
@@ -1220,7 +1230,7 @@ void jedi::calculate(){
   double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);//JEDI score without connectivity
   setValue(Jedi);
 
-  cout << "Jedi score is " << Jedi << " alpha " << params.alpha << " Va " << Va << " beta " << params.beta << " Ha " << Ha << " gamma " << params.gamma << endl;
+  //cout << "Jedi score is " << Jedi << " alpha " << params.alpha << " Va " << Va << " beta " << params.beta << " Ha " << Ha << " gamma " << params.gamma << endl;
   //exit(0);
 
   // cout.precision(9);
@@ -1231,16 +1241,17 @@ void jedi::calculate(){
 
   int step= getStep();
   int mod =fmod(step,stride);
-  cout << " we are at step " << step << " we dump ? " << mod << endl;
+  //cout << " we are at step " << step << " we dump ? " << mod << endl;
   if (!mod)
     {
       ofstream wfile;
-      wfile.open("jedi_output.dat",std::ios_base::app); // This command allows you to append data to a file that already exists
+      //wfile.open("jedi_output.dat",std::ios_base::app); // This command allows you to append data to a file that already exists
+      wfile.open(summary_file.c_str(),std::ios_base::app);
       //wfile << current << " " << Jedi << " " << Vdrug_like << " " << Ha << " " << Va
       //	    << " " << COM_x << " " << COM_y << " " << COM_z << " " << score[0] << " " << score[1] << " "
       //    << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " 
       //    << score[7] << " " << score[8] <<endl;
-      wfile << step << " " << Jedi << " " << Vdrug_like << " " << Ha << " " << Va 
+      wfile << step << " " << Jedi << " " << Vdrug_like << " " << Va << " " << Ha 
       	    << " " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << " " << rotmat[0][0] << " " << rotmat[0][1] << " "
           << rotmat[0][2] << " " << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << " " << rotmat[2][0] << " " 
           << rotmat[2][1] << " " << rotmat[2][2] << endl;
@@ -1266,11 +1277,23 @@ void jedi::calculate(){
   //-----------------------------------------
 
   //FIXME: Compute derivatives at the same time as potential for speed
-  cout << " Doing derivatives " << endl;
+  //cout << " Doing derivatives " << endl;
+
   unsigned n_apolar = apolaratoms.size();
   unsigned n_polar = polaratoms.size();
   unsigned n_cv_atoms = n_apolar + n_polar;
   unsigned n_active_grid = active_grid.size();
+
+  vector<double> d_ai_xpj_vec;
+  d_ai_xpj_vec.reserve(n_active_grid);
+  vector<double> d_ai_ypj_vec;
+  d_ai_ypj_vec.reserve(n_active_grid);
+  vector<double> d_ai_zpj_vec;
+  d_ai_zpj_vec.reserve(n_active_grid);
+  vector<double> dij_vec;
+  dij_vec.reserve(n_active_grid);
+
+  //n_cv_atoms=0;
   for ( unsigned j=0; j < n_cv_atoms ; j++)
     {
       double xj = getPosition(j)[0];
@@ -1290,12 +1313,18 @@ void jedi::calculate(){
 	  double dij_x = xi-xj;
 	  double dij_y = yi-yj;
 	  double dij_z = zi-zj;
-	  cout << " grid index " << grid_index << endl;
-	  cout << " xi " << xi << " yi " << yi << " zi " << zi << endl;
-	  cout << " xj " << xj << " yj " << yj << " zj " << zj << endl;
+	  //cout << " grid index " << grid_index << endl;
+	  //cout << " xi " << xi << " yi " << yi << " zi " << zi << endl;
+	  //cout << " xj " << xj << " yj " << yj << " zj " << zj << endl;
 	  double dij2 = dij_x*dij_x + dij_y*dij_y + dij_z*dij_z;
 	  double dij = sqrt(dij2);
-	  cout << " dij " << dij << endl;
+	  if (dij < min_modr)//JM since also done in JEDI CV calc
+	    {
+	      dij = min_modr;
+	      dij2 = dij*dij;
+	    }
+	  dij_vec[i] = dij;
+	  //cout << " dij " << dij << endl;
 	  //exit(0);
 	  // COULD USE CUTOFFS TO SPEED UP CALCULATION?
 	  double d_rij_xpj = - dij_x / dij;
@@ -1316,6 +1345,7 @@ void jedi::calculate(){
 	    (1.0/params.deltaCC);
 	  // d_Sonmindi over x/y/z
 	  double d_Sonmindi_xpj = d_Sonmindi_dm*d_mindi_xpj;
+	  //cout << " mindi " << beta/std::log(sum_dist[grid_index]) <<  " d_Sonmindi_dm " <<  d_Sonmindi_dm << " d_mindi_rij " << d_mindi_rij << " d_rij_xpj " << d_rij_xpj << endl;
 	  double d_Sonmindi_ypj = d_Sonmindi_dm*d_mindi_ypj;
 	  double d_Sonmindi_zpj = d_Sonmindi_dm*d_mindi_zpj;
 	  // For exposure calculations we must inspect all neighbors of i
@@ -1339,6 +1369,11 @@ void jedi::calculate(){
 	      double rjk_z = zk-zj;
 	      double djk2 = rjk_x*rjk_x + rjk_y*rjk_y + rjk_z*rjk_z;
 	      double djk = sqrt(djk2);
+	      if (djk < min_modr)
+		{
+		  djk = min_modr;
+		  djk2 = djk*djk;
+		}
 	      double son_rik = s_on( 1.0, dik, params.GP1_min, params.deltaGP1);//eq 25 SI
 	      double soff_rik = s_off( 1.0, dik, params.GP2_min, params.deltaGP2);
 	      // Could opt by doing 1 pass to compute all d_mindk_rik and then
@@ -1358,7 +1393,7 @@ void jedi::calculate(){
 	      double allterms_x = d_Soffmindk_m*d_mindk_xpj*son_rik*soff_rik;
 	      double allterms_y = d_Soffmindk_m*d_mindk_ypj*son_rik*soff_rik;
 	      double allterms_z = d_Soffmindk_m*d_mindk_zpj*son_rik*soff_rik;
-	      //cout << " d_Soffmindk_m " << d_Soffmindk_m << " d_mindk_xpj " << d_mindk_xpj << " son_rik " << son_rik << " soff_rik " << soff_rik << endl;
+	      //cout << " l " << l << " djk " << djk << " d_Soffmindk_m " << d_Soffmindk_m << " d_mindk_xpj " << d_mindk_xpj << " son_rik " << son_rik << " soff_rik " << soff_rik << endl;
 	      //cout << " allterms_x " << allterms_x << endl;
 	      //exit(0);
 	      d_Emin_xpj += allterms_x;
@@ -1372,15 +1407,18 @@ void jedi::calculate(){
 	  double d_Sonexposurei_m = ds_on_dm(1.0, exposure[grid_index],\
 					     params.Emin, params.deltaE);
 	  double d_Sonexposurei_xpj = d_Sonexposurei_m*(1.0/params.deltaE)\
-	    *d_Emin_xpj;;
+	    *d_Emin_xpj;
+	  //cout << "  d_Emin_xpj" <<  d_Emin_xpj << endl;
 	  double d_Sonexposurei_ypj = d_Sonexposurei_m*(1.0/params.deltaE)\
-	    *d_Emin_ypj;;
+	    *d_Emin_ypj;
 	  double d_Sonexposurei_zpj = d_Sonexposurei_m*(1.0/params.deltaE)\
 	    *d_Emin_zpj;;
 	  // d_ai_xpj
 	  double term1 = s_on_exposure[grid_index] * d_Sonmindi_xpj;
 	  double term2 = s_on_mind[grid_index] * d_Sonexposurei_xpj;
+	  //cout << "  d_Sonexposurei_xpj" <<  d_Sonexposurei_xpj << endl;
 	  double d_ai_xpj = grid_s_off_bsi[grid_index] * term1 * term2;
+	  //cout << " grid_s_off_bsi[grid_index] " << grid_s_off_bsi[grid_index] << " term1 " << term1 << " term2 " << term2 << endl;
 	  // d_ai_ypj
 	  term1 = s_on_exposure[grid_index] * d_Sonmindi_ypj;
 	  term2 = s_on_mind[grid_index] * d_Sonexposurei_ypj;
@@ -1389,18 +1427,67 @@ void jedi::calculate(){
 	  term1 = s_on_exposure[grid_index] * d_Sonmindi_zpj;
 	  term2 = s_on_mind[grid_index] * d_Sonexposurei_zpj;
 	  double d_ai_zpj = grid_s_off_bsi[grid_index] * term1 * term2;
-	  cout << " j atom " << j << " active grid i " << i << " activity " << activity[grid_index] << " d_ij " << dij << " d_Sonmindi_xpj " <<  d_Sonmindi_xpj << " y " << d_Sonmindi_ypj << " z " << d_Sonmindi_zpj << " d_Emin_xpj " << d_Emin_xpj << " d_Sonexposurei_xpj  " << d_Sonexposurei_xpj << endl;
-	  cout << " d_ai_xpj " << d_ai_xpj << " d_ai_ypj " << d_ai_ypj << " d_ai_zpj " << d_ai_zpj << endl;
+	  //cout << " j atom " << j << " active grid i " << i << " activity " << activity[grid_index] << " d_ij " << dij << " d_Sonmindi_xpj " <<  d_Sonmindi_xpj << " y " << d_Sonmindi_ypj << " z " << d_Sonmindi_zpj << " d_Emin_xpj " << d_Emin_xpj << " d_Sonexposurei_xpj  " << d_Sonexposurei_xpj << endl;
+	  /*cout << " j atom " << j << " i grid " << i << " activity "	\
+	       << activity[grid_index] << " dij " << dij << " d_ai_xpj " \
+	       << d_ai_xpj << " d_ai_ypj " << d_ai_ypj		\
+	       << " d_ai_zpj " << d_ai_zpj				\
+	       << " d_Sonexposurei_m " << d_Sonexposurei_m		\
+	       << " Exposure " << exposure[grid_index]		\
+	       << " d_Emin_xpj " << d_Emin_xpj \
+	       << " s_on_exposure " << s_on_exposure[grid_index] \
+	       << " d_Sonexposurei_xpj " << d_Sonexposurei_xpj \
+	       << " s_on_mindi " << s_on_mind[grid_index] \
+	       << " d_Sonmindi_xpj " << d_Sonmindi_xpj \
+	       << endl;*/
 	  //exit(0);
 	  sum_d_ai_xpj+= d_ai_xpj;
 	  sum_d_ai_ypj+= d_ai_ypj;
 	  sum_d_ai_zpj+= d_ai_zpj;
+	  d_ai_xpj_vec[i] = d_ai_xpj;
+	  d_ai_ypj_vec[i] = d_ai_ypj;
+	  d_ai_zpj_vec[i] = d_ai_zpj;
+	  // Also accumulate now some partial derivatives we need for Ha later
+	  //double d_Soffrij_m = ds_off_dm(activity[grid_index], dij, params.r_hydro, params.deltar_hydro);
+	  //double d_Soffrij_ai = ds_off_dk(activity[grid_index],dij,params.r_hydro,params.deltar_hydro);
+	  //double d_apolarpolari_xpj = d_Soffrij_m*(1.0/params.r_hydro)*d_rij_xpj+ \
+	  //      d_Soffrij_ai*d_ai_xpj;
+	  //double d_apolarpolari_ypj = d_Soffrij_m*(1.0/params.r_hydro)*d_rij_ypj+ \
+	  //   d_Soffrij_ai*d_ai_ypj;
+	  //double d_apolarpolari_zpj = d_Soffrij_m*(1.0/params.r_hydro)*d_rij_zpj+ \
+	  //  d_Soffrij_ai*d_ai_zpj;
+	  //cout << " d_apolarpolari_xpj " << d_apolarpolari_xpj << " d_apolarpolari_ypj " << d_apolarpolari_ypj << " d_apolarpolari_zpj " << d_apolarpolari_zpj << endl;
+	  //double num_x;
+	  //double num_y;
+	  //double num_z;
+	  //if (j < n_apolar)
+	  //  {
+	  //    num_x=d_apolarpolari_xpj*(apolarity[grid_index]+polarity[grid_index]) \
+		  //	-apolarity[grid_index]*d_apolarpolari_xpj;
+	  //num_y=d_apolarpolari_ypj*(apolarity[grid_index]+polarity[grid_index]) \
+	      //	-apolarity[grid_index]*d_apolarpolari_ypj;
+	      //num_z=d_apolarpolari_zpj*(apolarity[grid_index]+polarity[grid_index]) \
+		  //-apolarity[grid_index]*d_apolarpolari_zpj;
+	  //}
+	  //else
+	  //  {
+	  //  num_x=-d_apolarpolari_xpj*(apolarity[grid_index]);
+	  //  num_y=-d_apolarpolari_ypj*(apolarity[grid_index]);
+	  //  num_z=-d_apolarpolari_zpj*(apolarity[grid_index]);
+	  //}
+	  //double den2=(apolarity[grid_index]+polarity[grid_index])*(apolarity[grid_index]+polarity[grid_index]);
+	  //double d_Hi_xpj=num_x/den2;
+	  //double d_Hi_ypj=num_y/den2;
+	  //double d_Hi_zpj=num_z/den2;
+	  //cout << " d_Hi_xpj " << d_Hi_xpj << " d_Hi_ypj " << d_Hi_ypj << " d_Hi_zpj " << d_Hi_zpj << endl;
+	  //sum_d_Hi_xpj += d_Hi_xpj;
+	  //sum_d_Hi_ypj += d_Hi_ypj;
+	  //sum_d_Hi_zpj += d_Hi_zpj;
 	}
       // Compute Vdrug_like derivatives
       double d_V_xpj = sum_d_ai_xpj*Vg;
       double d_V_ypj = sum_d_ai_ypj*Vg;
       double d_V_zpj = sum_d_ai_zpj*Vg;
-      cout << " d_V_xpj " << d_V_xpj << " d_V_ypj " << d_V_ypj << " d_V_zpj " << d_V_zpj <<endl;
       double d_sonV_m = ds_on_dm(1.0,volume,params.V_min,params.deltaV_min);
       double d_sonV_xpj = d_sonV_m*(1.0/params.deltaV_min)*d_V_xpj;
       double d_sonV_ypj = d_sonV_m*(1.0/params.deltaV_min)*d_V_ypj;
@@ -1413,465 +1500,125 @@ void jedi::calculate(){
       double d_Vdruglike_xpj = s_off_V * d_sonV_xpj + s_on_V * d_soffV_xpj;
       double d_Vdruglike_ypj = s_off_V * d_sonV_ypj + s_on_V * d_soffV_ypj;
       double d_Vdruglike_zpj = s_off_V * d_sonV_zpj + s_on_V * d_soffV_zpj;
-      cout << " d_Vdruglike_xpj " << d_Vdruglike_xpj << " d_Vdruglike_ypj " << d_Vdruglike_ypj << " d_Vdruglike_zpj " << d_Vdruglike_zpj <<endl; 
       // Compute Va derivatives
       double d_Va_xpj = d_V_xpj/params.V_max;
       double d_Va_ypj = d_V_ypj/params.V_max;
       double d_Va_zpj = d_V_zpj/params.V_max;
-      cout << " d_Va_xpj " << d_Va_xpj << " d_Va_ypj " << d_Va_ypj << " d_Va_zpj " << d_Va_zpj <<endl; 
-      exit(0);
       // Compute Ha derivatives
+      double sum_d_Hderiv_xpj=0.0;
+      double sum_d_Hderiv_ypj=0.0;
+      double sum_d_Hderiv_zpj=0.0;
+      for (unsigned i=0; i < n_active_grid; i++)
+	{
+	  int grid_index = active_grid[i];
+
+	  double d_apolari_xpj;
+	  double d_polari_xpj;
+	  double d_apolari_ypj;
+	  double d_polari_ypj;
+	  double d_apolari_zpj;
+	  double d_polari_zpj;
+
+	  // d_Hi_xpj
+	  double dij=dij_vec[i];
+	  double d_rij_xpj=-(new_x[grid_index]-xj)/dij;//Or store during previous loop?	  
+	  double d_rij_ypj=-(new_y[grid_index]-yj)/dij;
+	  double d_rij_zpj=-(new_z[grid_index]-zj)/dij;
+	  double ai=activity[grid_index];
+	  double d_Soffrij_m=ds_off_dm(ai,dij,params.r_hydro,params.deltar_hydro);
+	  double d_Soffrij_ai=ds_off_dk(ai,dij,params.r_hydro,params.deltar_hydro);
+	  double deriv_x=d_Soffrij_m*(1/params.r_hydro)*d_rij_xpj+d_Soffrij_ai \
+	    *d_ai_xpj_vec[i];
+	  double deriv_y=d_Soffrij_m*(1/params.r_hydro)*d_rij_ypj+d_Soffrij_ai\
+	    *d_ai_ypj_vec[i];
+	  double deriv_z=d_Soffrij_m*(1/params.r_hydro)*d_rij_zpj+d_Soffrij_ai\
+	    *d_ai_zpj_vec[i];
+
+	  if (j < n_apolar)
+	    {
+	      d_polari_xpj=0.0;
+	      d_polari_ypj=0.0;
+	      d_polari_zpj=0.0;
+	      d_apolari_xpj=deriv_x;
+	      d_apolari_ypj=deriv_y;
+	      d_apolari_zpj=deriv_z;
+	    }
+	  else
+	    {
+	      d_polari_xpj=deriv_x;
+	      d_polari_ypj=deriv_y;
+	      d_polari_zpj=deriv_z;
+	      d_apolari_xpj=0.0;
+	      d_apolari_ypj=0.0;
+	      d_apolari_zpj=0.0;
+	    }
+
+	  double apolar=apolarity[grid_index];
+	  double term1=(apolar+polarity[grid_index]);
+	  double num_x=term1*d_apolari_xpj-\
+	    apolar*(d_apolari_xpj+d_polari_xpj);
+	  double num_y=term1*d_apolari_ypj-\
+	    apolar*(d_apolari_ypj+d_polari_ypj);
+	  double num_z=term1*d_apolari_zpj-\
+	    apolar*(d_apolari_zpj+d_polari_zpj);
+	  double den=term1*term1;
+	  double d_Hi_xpj=num_x/den;
+	  double d_Hi_ypj=num_y/den;
+	  double d_Hi_zpj=num_z/den;
+	  //cout << " d_Hi_xpj " << d_Hi_xpj << " d_Hi_ypj " << d_Hi_ypj << " d_Hi_zpj " << d_Hi_zpj << endl;
+	  // d_Hderiv_xpj
+	  double Hi=hydrophobicity_list[grid_index];
+	  double term2_x=Hi*d_ai_xpj_vec[i];
+	  double term2_y=Hi*d_ai_ypj_vec[i];
+	  double term2_z=Hi*d_ai_zpj_vec[i];
+	  double term3_x=ai*d_Hi_xpj;
+	  double term3_y=ai*d_Hi_ypj;
+	  double term3_z=ai*d_Hi_zpj;
+	  double term4=Hi*ai;
+	  double num2_x=sum_activity*(term2_x+term3_x)-term4*sum_d_ai_xpj;
+	  double num2_y=sum_activity*(term2_y+term3_y)-term4*sum_d_ai_ypj;
+	  double num2_z=sum_activity*(term2_z+term3_z)-term4*sum_d_ai_zpj;
+	  double d_Hderiv_xpj=num2_x/sum_activity2;
+	  double d_Hderiv_ypj=num2_y/sum_activity2;
+	  double d_Hderiv_zpj=num2_z/sum_activity2;
+	  //cout << " j " << j << " i " << i << " d_Hderiv_xpj " << d_Hderiv_xpj << endl;
+	  sum_d_Hderiv_xpj += d_Hderiv_xpj;
+	  sum_d_Hderiv_ypj += d_Hderiv_ypj;
+	  sum_d_Hderiv_zpj += d_Hderiv_zpj;
+	}
+      //cout << " sum_d_Hi_xpj " << sum_d_Hi_xpj << " sum_d_Hi_ypj " << sum_d_Hi_ypj << " sum_d_Hi_zpj " << sum_d_Hi_zpj << endl;
+      //double d_Ha_xpj = sum_d_Hi_xpj/params.V_max;
+      //double d_Ha_ypj = sum_d_Hi_ypj/params.V_max;
+      //double d_Ha_zpj = sum_d_Hi_zpj/params.V_max;
+      double d_Ha_xpj = sum_d_Hderiv_xpj;
+      double d_Ha_ypj = sum_d_Hderiv_ypj;
+      double d_Ha_zpj = sum_d_Hderiv_zpj;
+      //exit(0);
       // Compute JEDI derivatives
-      //setAtomsDerivatives(j,Vector(vx,vy,vz));
-    }
-
-  exit(0);
-
-  //double dV_dx;
-  double ds1_dx, ds1_dy, ds1_dz;//derivatives Vmin
-  double ds2_dx, ds2_dy, ds2_dz;//derivatives Vmax
-  double da_dx, da_dy, da_dz;//derivatives activity
-  double ds2_dm, dAp_dm, dAp_dx;//, dP_dx;
-
-
-  //FIXME: Initialise arrays with '0'
-  //double dVdrug_like_dx_apolar[apolaratoms.size()];
-  vector<double> dVdrug_like_dx_apolar;
-  dVdrug_like_dx_apolar.resize(apolaratoms.size());
-  //double dVdrug_like_dx_polar[polaratoms.size()];
-  vector<double> dVdrug_like_dx_polar;
-  dVdrug_like_dx_polar.resize(polaratoms.size());
-  //double dV_dx_apolar[apolaratoms.size()];
-  vector<double> dV_dx_apolar;
-  dV_dx_apolar.resize(apolaratoms.size());
-  //double dV_dx_polar[polaratoms.size()];
-  vector<double> dV_dx_polar;
-  dV_dx_polar.resize(polaratoms.size());
-  //double dVdrug_like_dy_apolar[apolaratoms.size()];
-  vector<double> dVdrug_like_dy_apolar;
-  dVdrug_like_dy_apolar.resize(apolaratoms.size());
-  //double dVdrug_like_dy_polar[polaratoms.size()];
-  vector<double> dVdrug_like_dy_polar;
-  dVdrug_like_dy_polar.resize(polaratoms.size());
-  //double dV_dy_apolar[apolaratoms.size()];
-  vector<double> dV_dy_apolar;
-  dV_dy_apolar.resize(apolaratoms.size());
-  //double dV_dy_polar[polaratoms.size()];
-  vector<double> dV_dy_polar;
-  dV_dy_polar.resize(polaratoms.size());
-  //double dVdrug_like_dz_apolar[apolaratoms.size()];
-  vector<double> dVdrug_like_dz_apolar;
-  dVdrug_like_dz_apolar.resize(apolaratoms.size());
-  //double dVdrug_like_dz_polar[polaratoms.size()];
-  vector<double> dVdrug_like_dz_polar;
-  dVdrug_like_dz_polar.resize(polaratoms.size());
-  //double dV_dz_apolar[apolaratoms.size()];
-  vector<double> dV_dz_apolar;
-  dV_dz_apolar.resize(apolaratoms.size());
-  //double dV_dz_polar[polaratoms.size()];
-  vector<double> dV_dz_polar;
-  dV_dz_polar.resize(polaratoms.size());
-  //double dH_dx_apolar[apolaratoms.size()];
-  vector<double> dH_dx_apolar;
-  dH_dx_apolar.resize(apolaratoms.size());
-  //double dH_dx_polar[polaratoms.size()];
-  vector<double> dH_dx_polar;
-  dH_dx_polar.resize(polaratoms.size());
-  //JM 15/02/16 I AM HERE
-  //double dH_dy_apolar[apolaratoms.size()];
-  vector<double> dH_dy_apolar;
-  dH_dy_apolar.resize(apolaratoms.size());
-  //double dH_dy_polar[polaratoms.size()];
-  vector<double> dH_dy_polar;
-  dH_dy_polar.resize(polaratoms.size());
-  //double dH_dz_apolar[apolaratoms.size()];
-  vector<double> dH_dz_apolar;
-  dH_dz_apolar.resize(apolaratoms.size());
-  //double dH_dz_polar[polaratoms.size()];
-  vector<double> dH_dz_polar;
-  dH_dz_polar.resize(polaratoms.size());
-  double dHa_dx, dHa_dy, dHa_dz, dP_dm, ds1_dm;
-
-  //FIXME: Magic numbers
-  //double da_dx_apolar[active_grid.size()][apolaratoms.size()];
-  //double da_dx_apolar[active_grid.size() * apolaratoms.size() + 1];
-  vector< double > da_dx_apolar;
-  da_dx_apolar.resize(active_grid.size() * apolaratoms.size());
-  //double da_dy_apolar[active_grid.size()][apolaratoms.size()];
-  //double da_dy_apolar[active_grid.size() * apolaratoms.size()];
-  vector< double > da_dy_apolar;
-  da_dy_apolar.resize(active_grid.size() * apolaratoms.size());
-  //double da_dz_apolar[active_grid.size()][apolaratoms.size()];
-  //double da_dz_apolar[active_grid.size() * apolaratoms.size() + 1];
-  vector< double > da_dz_apolar;
-  da_dz_apolar.resize(active_grid.size() * apolaratoms.size());
-  //double da_dx_polar[active_grid.size()][polaratoms.size()];
-  //double da_dx_polar[active_grid.size() * polaratoms.size() + 1];
-  vector< double > da_dx_polar;
-  da_dx_polar.resize(active_grid.size() * polaratoms.size());
-  //double da_dy_polar[active_grid.size()][polaratoms.size()];
-  //double da_dy_polar[active_grid.size() * polaratoms.size() + 1];
-  vector< double > da_dy_polar;
-  da_dy_polar.resize(active_grid.size() * polaratoms.size());
-  //double da_dz_polar[active_grid.size()][polaratoms.size()];
-  //double da_dz_polar[active_grid.size() * polaratoms.size() + 1];
-  vector< double > da_dz_polar;
-  da_dz_polar.resize(active_grid.size() * polaratoms.size());
-
-  double dSenclosure_dx, dSmind_dx, dSenclosure_dy, dSmind_dy, dSenclosure_dz, dSmind_dz;//dSmin: just for CC pemalty
-  double dsmind_dx, dsmind_dy, dsmind_dz;//dsmin: just for solvent exposed pemalty
-  double dmind_dx, dmind_dy, dmind_dz, dmind_dr, dr_dx, dr_dy, dr_dz,dSmind_dm,dSenclosure_dm,s1_ray,s2_ray;
-
-  double dsum_enclosure_x, dsum_enclosure_y, dsum_enclosure_z;// ds_off_dx, ds_on_dx, ds_off_dy, ds_on_dy, ds_off_dz, ds_on_dz;
-
-  //----------> da_dx, da_dy, da_dz ( activity )
-
-  //cout << " loop i over active_grid.size() is " << active_grid.size() << endl; 
-  for( unsigned i = 0; i < active_grid.size() ; i++)
-    {
-      double grd_x = new_x[active_grid[i]];
-      double grd_y = new_y[active_grid[i]];
-      double grd_z = new_z[active_grid[i]];
-      // da_dx_apolar
-      cout << " i " << i << " loop j over apolaratoms is " << apolaratoms.size() << endl;
-      for( unsigned j = 0; j < apolaratoms.size() ; j++)
+      double term1_x=0.0;
+      double term1_y=0.0;
+      double term1_z=0.0;
+      if (Vdrug_like>0)
 	{
-	  //rij[0]    = new_x[active_grid[i]] - getPosition(j)[0];
-	  //rij[1]    = new_y[active_grid[i]] - getPosition(j)[1];
-	  //rij[2]    = new_z[active_grid[i]] - getPosition(j)[2];
-	  rij[0]    = grd_x - getPosition(j)[0];
-	  rij[1]    = grd_y - getPosition(j)[1];
-	  rij[2]    = grd_z - getPosition(j)[2];
-	  double mod_rij   = sqrt( rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < min_modr)// FIXME: Constant
-	    mod_rij = min_modr;
-
-	  dmind_dr = ((beta*beta)*(exp(beta/mod_rij))) / ((mod_rij*mod_rij) * (sum_dist[active_grid[i]]) * pow((std::log(sum_dist[active_grid[i]])),2));// eq 22 SI
-	  dSmind_dm = ds_on_dm(1.0,min_dist_list[active_grid[i]],params.CC_mind,params.deltaCC) * 1.0/params.deltaCC;// Equation 13 SI and 20 SI
-
-	  dsum_enclosure_x = 0.0;
-	  dr_dx  = - (new_x[active_grid[i]]-getPosition(j)[0]) / (mod_rij);// equation 23 SI
-	  dmind_dx  = dmind_dr*(dr_dx);// eq 21 SI
-	  dSmind_dx = dSmind_dm * dmind_dx;//eq 20 SI
-
-	  dsum_enclosure_y = 0.0;
-	  dr_dy  = - (new_y[active_grid[i]]-getPosition(j)[1]) / (mod_rij);
-	  dmind_dy  = dmind_dr*(dr_dy);
-	  dSmind_dy = dSmind_dm * dmind_dy;
-
-	  dsum_enclosure_z = 0.0;
-	  dr_dz  = - (new_z[active_grid[i]]-getPosition(j)[2]) / (mod_rij);
-	  dmind_dz  = dmind_dr*(dr_dz);
-	  dSmind_dz = dSmind_dm * dmind_dz;
-
-	  //for( l = 0; l < 44 ; l++)//FIXME Magic number
-	  vector<int> neighbors_i = neighbors[active_grid[i]];
-	  for (unsigned l = 0; l < neighbors_i.size() ; l++)
-	    {
-	      double rjk[3];
-	      double rik[3];
-	      int k = neighbors_i[l];
-	      //cout << " k is " << k << endl;
-	      //cout << "j is " << j << endl;
-	      //cout << "active_grid[ i ] " << active_grid[i] << " i " << i << " l " << l << endl;
-	      rjk[0]    = new_x[k] - getPosition(j)[0];//protein j and grid point k
-	      rjk[1]    = new_y[k] - getPosition(j)[1];//protein j and grid point k
-	      rjk[2]    = new_z[k] - getPosition(j)[2];//protein j and grid point k
-	      rik[0]    = new_x[k] - grd_x;
-	      rik[1]    = new_y[k] - grd_y;
-	      rik[2]    = new_z[k] - grd_z;
-	      // FIXME No PBC check !!  Code may need changes for PBC
-	      double mod_rjk   = sqrt(rjk[0]*rjk[0]+rjk[1]*rjk[1]+rjk[2]*rjk[2]);//protein j and grid point k
-	      double mod_rik   = sqrt(rik[0]*rik[0]+rik[1]*rik[1]+rik[2]*rik[2]);//grid point i and grid point k
-	      //FIXME Magic numbers
-	      if (mod_rjk < min_modr)
-		mod_rjk = min_modr;
-
-	      if (mod_rik < min_modr)
-		mod_rik = min_modr;
-
-	      s1_ray    = s_on( 1.0, mod_rik, params.GP1_min, params.deltaGP1);//eq 25 SI
-	      s2_ray    = s_off(1.0, mod_rik, params.GP2_min, params.deltaGP2);// eq 25 SI
-	      //cout << "rjk[0] " << rjk[0] << " rik[0] " << rik[0] << endl;
-	      dmind_dr  = ((beta*beta)*(exp(beta/mod_rjk))) / ((mod_rjk*mod_rjk) * (sum_dist[k]) * pow((std::log(sum_dist[k])),2));
-	      //dSmind_dm = ds_off_dm(1.0,min_dist_list[k],0.15,cutoff_far) * 1.0/cutoff_far ;
-	      dSmind_dm = ds_off_dm(1.0,min_dist_list[k],params.CC2_min,params.deltaCC2) * 1.0/params.deltaCC2 ;
-	      //...with respect to x
-	      dr_dx     = - (new_x[k]-getPosition(j)[0]) / (mod_rjk);
-	      //cout << "dr_dx " << dr_dx << endl;
-	      dmind_dx  = dmind_dr*(dr_dx);
-	      dsmind_dx = dSmind_dm * dmind_dx;
-	      dsum_enclosure_x += (dsmind_dx * ( s1_ray * s2_ray ));
-	      //...with respect to y
-	      dr_dy     = - (new_y[k]-getPosition(j)[1]) / (mod_rjk);
-	      dmind_dy  = dmind_dr*(dr_dy);
-	      dsmind_dy = dSmind_dm * dmind_dy;
-	      dsum_enclosure_y += (dsmind_dy * ( s1_ray * s2_ray ));
-	      //...with respect to z
-	      dr_dz     = - (new_z[k]-getPosition(j)[2]) / (mod_rjk);
-	      dmind_dz  = dmind_dr*(dr_dz);
-	      dsmind_dz = dSmind_dm * dmind_dz;
-	      dsum_enclosure_z += (dsmind_dz * ( s1_ray * s2_ray ));
-	    }
-	  dSenclosure_dm     = ds_on_dm( 1.0, exposure[active_grid[i]], params.Emin, params.deltaE);
-	  dSenclosure_dx     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_x;// eq 24 SI
-	  //cout << "doing da_dx_apolar" << endl;
-	  double tmp = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) * grid_s_off_bsi[active_grid[i]];
-	  da_dx_apolar[i*apolaratoms.size()+j] = tmp;
-	  cout << " da_dx_apolar i " << i << " j " << j << tmp << endl;
-	  //exit(0);
-	  dSenclosure_dy     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_y;
-	  //cout << "doing da_dy_apolar" << endl;
-	  //cout << " i " << i << " j " << j << " active_grid " << active_grid.size() << " apolaratoms.size() " << apolaratoms.size() << " index " << i*apolaratoms.size()+j << endl;
-	  da_dy_apolar[i*apolaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
-
-	  dSenclosure_dz     = dSenclosure_dm * 1.0/params.deltaE * dsum_enclosure_z;
-	  //cout << "doing da_dz_apolar" << endl;
-	  da_dz_apolar[i*apolaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
-
-	  dsum_enclosure_x   = 0.;
-	  dsum_enclosure_y   = 0.;
-	  dsum_enclosure_z   = 0.;
+	  term1_x=(1/Vdrug_like)*d_Vdruglike_xpj;
+	  term1_y=(1/Vdrug_like)*d_Vdruglike_ypj;
+	  term1_z=(1/Vdrug_like)*d_Vdruglike_zpj;
 	}
-      // da_dx_polar
-      //cout << " loop j over polaratoms.size() is " << polaratoms.size() << endl;
-      for( unsigned j = 0; j < polaratoms.size() ; j++)
-	{
-	  //jj = j - Apolar.size();
-	  //jj = j;//FIXME: Clarify need for 'jj'
-	  rij[0]    = new_x[active_grid[i]] - getPosition(apolaratoms.size() + j)[0];
-	  rij[1]    = new_y[active_grid[i]] - getPosition(apolaratoms.size() + j)[1];
-	  rij[2]    = new_z[active_grid[i]] - getPosition(apolaratoms.size() + j)[2];
-	  double mod_rij   = sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	  if (mod_rij < min_modr)// FIXME constant
-	      mod_rij = min_modr;
-
-	  dmind_dr = ((beta*beta)*(exp(beta/mod_rij))) / ((mod_rij*mod_rij) * (sum_dist[active_grid[i]]) * pow((std::log(sum_dist[active_grid[i]])),2));
-	  dSmind_dm = ds_on_dm(1.0,min_dist_list[active_grid[i]],params.CC_mind,params.deltaCC) * 1.0/params.deltaCC;
-	  dsum_enclosure_x = 0.0;
-	  dr_dx  = - (new_x[active_grid[i]]-getPosition(apolaratoms.size()+j)[0]) / (mod_rij);
-	  dmind_dx  = dmind_dr*(dr_dx);
-	  dSmind_dx = dSmind_dm * dmind_dx;
-	  
-	  dsum_enclosure_y = 0.0;
-	  dr_dy  = - (new_y[active_grid[i]]-getPosition(apolaratoms.size()+j)[1]) / (mod_rij);
-	  dmind_dy  = dmind_dr*(dr_dy);
-	  dSmind_dy = dSmind_dm * dmind_dy;
-
-	  dsum_enclosure_z = 0.0;
-	  dr_dz     = - (new_z[active_grid[i]]-getPosition(apolaratoms.size()+j)[2]) / (mod_rij);
-	  dmind_dz  = dmind_dr*(dr_dz);
-	  dSmind_dz = dSmind_dm * dmind_dz;
-	  //cout << " loop l over rays "<< endl;
-	  vector<int> neighbors_i = neighbors[active_grid[i]];
-	  for (unsigned l = 0; l < neighbors_i.size() ; l++)
-	    //for( l = 0; l < 44 ; l++)
-	    {
-	      double rjk[3];
-	      double rik[3];
-	      int k = neighbors_i[l];
-	      rjk[0]    = new_x[k]-getPosition(apolaratoms.size()+j)[0];//protein j and grid point k
-	      rjk[1]    = new_y[k]-getPosition(apolaratoms.size()+j)[1];//protein j and grid point k
-	      rjk[2]    = new_z[k]-getPosition(apolaratoms.size()+j)[2];//protein j and grid point k
-	      rik[0]    = new_x[k]-grd_x;
-	      rik[1]    = new_y[k]-grd_y;
-	      rik[2]    = new_z[k]-grd_z;
-	      // FIXME No PBC check !!  Code may need changes for PBC 
-	      double mod_rjk   = sqrt(rjk[0]*rjk[0]+rjk[1]*rjk[1]+rjk[2]*rjk[2]);//protein j and grid point k
-	      double mod_rik   = sqrt(rik[0]*rik[0]+rik[1]*rik[1]+rik[2]*rik[2]);//grid point i and grid point k
-	      if (mod_rjk < min_modr)
-		mod_rjk = min_modr;
-
-	      if (mod_rik < min_modr)
-		mod_rik = min_modr;
-
-	      s1_ray    = s_on(1.0,mod_rik,params.GP1_min,params.deltaGP1);
-	      s2_ray    = s_off(1.0,mod_rik,params.GP2_min,params.deltaGP2);
-	      dmind_dr  = ((beta*beta)*(exp(beta/mod_rjk))) / ((mod_rjk*mod_rjk) * (sum_dist[k]) * pow((std::log(sum_dist[k])),2));
-	      dSmind_dm = ds_off_dm(1.0, min_dist_list[k], params.CC2_min, params.deltaCC2)* 1.0/params.deltaCC2;
-	      //...with respect to x
-	      dr_dx     = - (new_x[k]-getPosition(apolaratoms.size()+j)[0]) / (mod_rjk);
-	      dmind_dx  = dmind_dr*(dr_dx);
-	      dsmind_dx = dSmind_dm * dmind_dx;
-	      dsum_enclosure_x += (dsmind_dx * ( s1_ray * s2_ray ));
-	      //...with respect to y
-	      dr_dy     = - (new_y[k]-getPosition(apolaratoms.size()+j)[1]) / (mod_rjk);
-	      dmind_dy  = dmind_dr*(dr_dy);
-	      dsmind_dy = dSmind_dm * dmind_dy;
-	      dsum_enclosure_y += (dsmind_dy * ( s1_ray * s2_ray ));
-	      //...with respect to z
-	      dr_dz     = - (new_z[k]-getPosition(apolaratoms.size()+j)[2]) / (mod_rjk);
-	      dmind_dz  = dmind_dr*(dr_dz);
-	      dsmind_dz = dSmind_dm * dmind_dz;
-	      dsum_enclosure_z += (dsmind_dz * ( s1_ray * s2_ray ));
-	    }
-	  dSenclosure_dm     = ds_on_dm(1.0,exposure[active_grid[i]],params.Emin,params.deltaE) * 1.0/params.deltaE;
-	  dSenclosure_dx     = dSenclosure_dm * dsum_enclosure_x;
-	  //cout << "doing da_dx_polar" << endl;
-	  da_dx_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dx + s_on_mind[active_grid[i]] * dSenclosure_dx) *grid_s_off_bsi[active_grid[i]];
-	  dSenclosure_dy     = dSenclosure_dm * dsum_enclosure_y;
-	  //cout << "doing da_dy_polar" << endl;
-	  da_dy_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dy + s_on_mind[active_grid[i]] * dSenclosure_dy) *grid_s_off_bsi[active_grid[i]];
-	  dSenclosure_dz     = dSenclosure_dm * dsum_enclosure_z;
-	  //cout << "doing da_dz_polar" << endl;
-	  da_dz_polar[i*polaratoms.size()+j] = ( s_on_exposure[active_grid[i]] * dSmind_dz + s_on_mind[active_grid[i]] * dSenclosure_dz) *grid_s_off_bsi[active_grid[i]];
-	  //cout << " i " << i << " j " << j << " da_dz_polar " << da_dz_polar[i*active_grid.size()+j] << " s_on_exposure[active_grid[i]] " << s_on_exposure[active_grid[i]] << " dSmind_dz " << dSmind_dz << " s_on_mind[active_grid[i] " << s_on_mind[active_grid[i]] << " dSenclosure_dz " << dSenclosure_dz << " grid_s_off_bsi[active_grid[i]] " << grid_s_off_bsi[active_grid[i]] << endl;
-	  dsum_enclosure_x   = 0.;
-	  dsum_enclosure_y   = 0.;
-	  dsum_enclosure_z   = 0.;
-      }
-    }
-
-  double vx,vy,vz;
-  // apolar atoms first
-  //cout << " summing partial derivatives " << endl;
-  for( unsigned j = 0; j < apolaratoms.size(); j++)
-    {
-      //jj      = j ;
-      dHa_dx  = 0.;
-      dHa_dy  = 0.;
-      dHa_dz  = 0.;
-      da_dx   = 0.;
-      da_dy   = 0.;
-      da_dz   = 0.;
-      for( unsigned i = 0; i < active_grid.size() ; i++)
-	{
-	  int gridpoint = active_grid[i];
-	  da_dx += da_dx_apolar[i*apolaratoms.size()+j];
-	  da_dy += da_dy_apolar[i*apolaratoms.size()+j];
-	  da_dz += da_dz_apolar[i*apolaratoms.size()+j];
-
-	  // Does this ever happen??
-	  if( (polarity[gridpoint] + apolarity[gridpoint]) > 0.)
-	    {
-	      rij[0]    = new_x[gridpoint] - getPosition(j)[0];
-	      rij[1]    = new_y[gridpoint] - getPosition(j)[1];
-	      rij[2]    = new_z[gridpoint] - getPosition(j)[2];
-	      double mod_rij   = sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-	      //FIXME: ceiling to mod_rij ?
-
-	      dAp_dm  = ds_off_dm(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro);//same value for x,y,z
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
-	      dHa_dx += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
-	      // FIXME: Awkward to call this dAp_dx if operating on y
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dy_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
-	      dHa_dy += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
-	      // FIXME: Same as above but for z
-	      dAp_dx  = ((dAp_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dz_apolar[i*apolaratoms.size()+j]);//!!! dynamic allocation
-	      dHa_dz += (1.0/volume) * ( (dAp_dx*(polarity[gridpoint] + apolarity[gridpoint]) - (apolarity[gridpoint])*dAp_dx ) / ((polarity[gridpoint] + apolarity[gridpoint]) * (polarity[gridpoint] + apolarity[gridpoint])));
-	    }
-	}
-      
-      dH_dx_apolar[j] = dHa_dx;
-      dH_dy_apolar[j] = dHa_dy;
-      dH_dz_apolar[j] = dHa_dz;
-
-      ds1_dm =ds_off_dm(1.0,volume,params.V_max,params.deltaV_max) * (1.0/params.deltaV_max) * (Vg) ;
-
-      dV_dx_apolar[j] = (Vg) * (da_dx);
-      dV_dy_apolar[j] = (Vg) * (da_dy);
-      dV_dz_apolar[j] = (Vg) * (da_dz);
-
-      ds1_dx = (ds1_dm) * (da_dx);
-      ds1_dy = (ds1_dm) * (da_dy);
-      ds1_dz = (ds1_dm) * (da_dz);
-
-      ds2_dm = ds_on_dm(1.0,volume,params.V_min,params.deltaV_min) * (1.0/params.deltaV_min) * (Vg) ;
-
-      ds2_dx = (ds2_dm) * (da_dx);
-      ds2_dy = (ds2_dm) * (da_dy);
-      ds2_dz = (ds2_dm) * (da_dz);
-
-      dVdrug_like_dx_apolar[j] = s1 * ds2_dx + s2 * ds1_dx;
-      dVdrug_like_dy_apolar[j] = s1 * ds2_dy + s2 * ds1_dy;
-      dVdrug_like_dz_apolar[j] = s1 * ds2_dz + s2 * ds1_dz;
-
-
-      // !! A difference with old code is that volume here has been divided by Vmax so is ca. 0.138
-      // in old code Volume has not been divided by Vmax. Which one should be used...
-      //-----  derivatives
-      vx= Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dx_apolar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dx_apolar[j]) + params.beta*(dH_dx_apolar[j]) ));
-      vy= Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dy_apolar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dy_apolar[j]) + params.beta*(dH_dy_apolar[j]) ));
-      vz= Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dz_apolar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dz_apolar[j]) + params.beta*(dH_dz_apolar[j]) ));
-      //cout << "Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dx_apolar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dx_apolar[j]) + params.beta*(dH_dx_apolar[j])))"<< endl;
-      cout << Jedi << " " << Vdrug_like << " " << dVdrug_like_dx_apolar[j] << " " << params.alpha << " " << Va << " " << params.beta << " " << Ha << " " << params.gamma << " " << dV_dx_apolar[j] << " " << dH_dx_apolar[j] << endl;
-      //cout << "j " << j << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
-      setAtomsDerivatives(j,Vector(vx,vy,vz));
-      cout << "APOLAR j " << j << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl; 
-    }
-
-  // now polar atoms
-  for( unsigned j = 0; j < polaratoms.size() ; j++)
-    {
-      //jj = j - Apolar.size();
-      //jj = j;
-      dHa_dx = 0.;
-      dHa_dy = 0.;
-      dHa_dz = 0.;
-      da_dx = 0.;
-      da_dy = 0.;
-      da_dz = 0.;
-      //cout << "Doing polar " << j << endl;
-      for( unsigned i = 0; i < active_grid.size() ; i++)
-	{
-	  int gridpoint = active_grid[i];
-	  da_dx += da_dx_polar[i*polaratoms.size()+j];
-	  da_dy += da_dy_polar[i*polaratoms.size()+j];
-	  da_dz += da_dz_polar[i*polaratoms.size()+j];
-
-	  if ( (polarity[gridpoint] + apolarity[gridpoint]) > 0.)
-	    {
-	      rij[0]    = new_x[gridpoint]-getPosition(apolaratoms.size()+j)[0];
-	      rij[1]    = new_y[gridpoint]-getPosition(apolaratoms.size()+j)[1];
-	      rij[2]    = new_z[gridpoint]-getPosition(apolaratoms.size()+j)[2];
-	      double mod_rij   = sqrt(rij[0]*rij[0]+rij[1]*rij[1]+rij[2]*rij[2]);
-	      //FIXME: magic number
-	      std::max(mod_rij, 0.05);
-	      dP_dm   = ds_off_dm(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro);
-	      double dP_dx   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[0])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dx_polar[i*polaratoms.size()+j] );
-	      dHa_dx += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dx )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
-	      //FIXME: name should be dy
-	      double dP_dy   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[1])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dy_polar[i*polaratoms.size()+j] );
-	      dHa_dy += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dy )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
-	      // FIXME name should be dz
-	      double dP_dz   = ( (dP_dm) * (1.0/params.deltar_hydro) * (-(rij[2])/(mod_rij)) ) + ( ds_off_dk(activity[gridpoint],mod_rij,params.r_hydro,params.deltar_hydro) * da_dz_polar[i*polaratoms.size()+j] );
-	      dHa_dz += (1.0/volume) * (-( ( apolarity[gridpoint] * dP_dz )/( (polarity[gridpoint]+apolarity[gridpoint])*(polarity[gridpoint]+apolarity[gridpoint]) ) ));
-	    }
-	}
-
-      dH_dx_polar[j] = dHa_dx;
-      dH_dy_polar[j] = dHa_dy;
-      dH_dz_polar[j] = dHa_dz;
-
-      //jj =j ;
-      ds1_dm =ds_off_dm(1.0,volume,params.V_max,params.deltaV_max) * (1.0/params.deltaV_max) * (Vg);
-
-      dV_dx_polar[j] = (Vg) * (da_dx);
-      dV_dy_polar[j] = (Vg) * (da_dy);
-      dV_dz_polar[j] = (Vg) * (da_dz);
-
-      ds1_dx = (ds1_dm) * (da_dx);
-      ds1_dy = (ds1_dm) * (da_dy);
-      ds1_dz = (ds1_dm) * (da_dz);
-
-      ds2_dm = ds_on_dm(1.0,volume,params.V_min,params.deltaV_min) * (1.0/params.deltaV_min) * (Vg);
-
-      ds2_dx = (ds2_dm) * (da_dx);
-      ds2_dy = (ds2_dm) * (da_dy);
-      ds2_dz = (ds2_dm) * (da_dz);
-
-      dVdrug_like_dx_polar[j] = s1 * ds2_dx + s2 * ds1_dx;
-      dVdrug_like_dy_polar[j] = s1 * ds2_dy + s2 * ds1_dy;
-      dVdrug_like_dz_polar[j] = s1 * ds2_dz + s2 * ds1_dz;
-
-      //-----  derivatives without
-      vx = Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dx_polar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dx_polar[j]) + params.beta*(dH_dx_polar[j]) ));
-      vy = Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dy_polar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dy_polar[j]) + params.beta*(dH_dy_polar[j]) ));
-      vz = Jedi * ((1.0/Vdrug_like)*(dVdrug_like_dz_polar[j]) + (1.0/(params.alpha*Va+params.beta*Ha+params.gamma)) * ( params.alpha*(dV_dz_polar[j]) + params.beta*(dH_dz_polar[j]) ));
-
-      setAtomsDerivatives(j+apolaratoms.size(),Vector(vx,vy,vz));
-      //cout << " jj " << jj << " dVdrug_like_dz_polar " << dVdrug_like_dz_polar[jj] << " dV_dz_polar " << dV_dz_polar[jj] << " dH_dz_polar[jj] " << dH_dz_polar[jj] << " da_dz " << da_dz << " ds1_dm " << ds1_dm << " ds2_dm " << ds2_dm << endl; 
-      cout << "POLAR jcount " << j+apolaratoms.size() << " vx, vy, vz are " << vx << "," << vy << "," << vz << endl;     
+      double term2=(1/(params.alpha*Va+params.beta*Ha+params.gamma));
+      double term3_x=(params.alpha*d_Va_xpj+params.beta*d_Ha_xpj);
+      double term3_y=(params.alpha*d_Va_xpj+params.beta*d_Ha_ypj);
+      double term3_z=(params.alpha*d_Va_xpj+params.beta*d_Ha_zpj);
+      double d_Jedi_xpj=Jedi*(term1_x+term2*term3_x);
+      double d_Jedi_ypj=Jedi*(term1_y+term2*term3_y);
+      double d_Jedi_zpj=Jedi*(term1_z+term2*term3_z);
+      //cout << " *** atom j *** " << j << endl;
+      //cout << " d_V_xpj " << d_V_xpj << " d_V_ypj " << d_V_ypj << " d_V_zpj " << d_V_zpj <<endl;
+      //cout << " d_Vdruglike_xpj " << d_Vdruglike_xpj << " d_Vdruglike_ypj " << d_Vdruglike_ypj << " d_Vdruglike_zpj " << d_Vdruglike_zpj <<endl; 
+      //cout << " d_Va_xpj " << d_Va_xpj << " d_Va_ypj " << d_Va_ypj << " d_Va_zpj " << d_Va_zpj <<endl; 
+      //cout << " d_Ha_xpj " << d_Ha_xpj << " d_Ha_ypj " << d_Ha_ypj << " d_Ha_zpj " << d_Ha_zpj <<endl; 
+      //cout << "atom j " << j << " d_Jedi_xpj " << d_Jedi_xpj << " d_Jedi_ypj " << d_Jedi_ypj << " d_Jedi_zpj " << d_Jedi_zpj << endl;
+      setAtomsDerivatives(j,Vector(d_Jedi_xpj,d_Jedi_ypj,d_Jedi_zpj));
+      //exit(0);
     }
 
   //TODO: Flag to output infrequently detailed grid statistics
@@ -1880,7 +1627,6 @@ void jedi::calculate(){
 
   //exit(0);
 
-}//close jedi::calculate
-  
+}//close jedi::calculate 
 }//close namespace colvar
 }//cloase namespace PLMD
