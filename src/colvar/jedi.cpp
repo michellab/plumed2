@@ -248,7 +248,8 @@ private:
   vector<Vector> ref_pos;// coordinates reference structure for alignment.
   double ref_com[3];// coordinates of the center of mass of the reference structure for alignments
   vector<Vector> grid_positions;//coordinates of the reference grid for alignment
-  int grid_extent[3];
+  int grid_extent[3];//the number of grid points along each axis
+  int grid_origin_idx;//the index of the grid point at the origin of the grid
   vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
   jediparameters params;// parameters druggability estimator
   vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
@@ -462,6 +463,7 @@ pbc(true)
   double gmax_y=-99999.0;
   double gmin_z=999999.0;
   double gmax_z=-99999.0;  
+  grid_origin_idx=0;//Assumed to be the first grid atom. Is that always right?
   for (int i=0; i < grid_positions.size() ; i++)
     {
       double gx = grid_positions[i][0];
@@ -1662,6 +1664,10 @@ void jedi::calculate(){
       out << step;
       s = out.str();
       tail.append(s);
+      string tail2;
+      tail2=tail;
+      string gridfilename2;
+      gridfilename2 = gridfilename;
       tail.append(".dx");
       gridfilename.append(tail);
       wfile.open(gridfilename.c_str());
@@ -1674,7 +1680,8 @@ void jedi::calculate(){
       //}
       // DX
       wfile << "object 1 class gridpositions counts " << grid_extent[0] << " " << grid_extent[1] << " " << grid_extent[2] << endl;
-      wfile << "origin " << grid_min[0]*10.0 << " " << grid_min[1]*10.0 << " " << grid_min[2]*10.0 << endl;
+      //wfile << "origin " << grid_min[0]*10.0 << " " << grid_min[1]*10.0 << " " << grid_min[2]*10.0 << endl;
+      wfile << "origin " << new_x[grid_origin_idx]*10.0 << " " << new_y[grid_origin_idx]*10.0 << " " << new_z[grid_origin_idx]*10.0 << endl;
       wfile << "delta " << rotmat[0][0]*params.resolution*10.0 << " " << rotmat[0][1]*params.resolution*10.0 << " " << rotmat[0][2]*params.resolution*10.0 << endl;
       wfile << "delta " << rotmat[1][0]*params.resolution*10.0 << " " << rotmat[1][1]*params.resolution*10.0 << " " << rotmat[1][2]*params.resolution*10.0 << endl;
       wfile << "delta " << rotmat[2][0]*params.resolution*10.0 << " " << rotmat[2][1]*params.resolution*10.0 << " " << rotmat[2][2]*params.resolution*10.0 << endl;      
@@ -1701,10 +1708,23 @@ void jedi::calculate(){
 	    }
 	}
       wfile.close();
+      tail2.append(".xyz");
+      gridfilename2.append(tail2);
+      //cout << gridfilename2 << endl;
+      //exit(0);
+      wfile.open(gridfilename2.c_str());
+      // XYZ
+      wfile << size_grid << endl;
+      wfile << "comment" << endl;
+      for (int i=0; i < size_grid; i++)
+      	{
+      	  wfile << "C " << std::fixed << std::setprecision(5) << new_x[i]*10 << " " << new_y[i]*10 << " " << new_z[i]*10 << endl;
+      }
+      wfile.close();
       // output detailed grid statistics in
       // dx files with updated position and 'activitiy'
       //                                and 'Ha'
-      exit(0);
+      //exit(0);
     }
 
 

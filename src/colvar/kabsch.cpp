@@ -255,7 +255,7 @@ int jacobi3(double a[3][3], double d[3], double v[3][3], int* n_rot)
           for (k=j+1; k<3; k++) 
             ROTATE(a, i, k, j, k)
 
-          for (k=0; k<3; k++) 
+          for (k=0; k<3; k++)
             ROTATE(v, k, i, k, j)
 
           ++(*n_rot);
@@ -263,7 +263,7 @@ int jacobi3(double a[3][3], double d[3], double v[3][3], int* n_rot)
       }
     }
 
-    for (i=0; i<3; i++) 
+    for (i=0; i<3; i++)
     {
       b[i] += z[i];
       d[i] = b[i];
