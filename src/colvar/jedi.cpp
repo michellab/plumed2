@@ -248,13 +248,14 @@ private:
   vector<Vector> ref_pos;// coordinates reference structure for alignment.
   double ref_com[3];// coordinates of the center of mass of the reference structure for alignments
   vector<Vector> grid_positions;//coordinates of the reference grid for alignment
+  int grid_extent[3];
   vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
   jediparameters params;// parameters druggability estimator
   vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
   string summary_file;//path to output file
   int stride;//frequency of output (in timesteps) to summary file;
   string gridstats_folder;//path to output grid folder;
-  //int gridstride;//frequency of output (in timestep) of a grid file;
+  int gridstride;//frequency of output (in timestep) of a grid file;
   //DEPRECATED
   //vector<vector<int> > rays;
   //vector<vector<int> > neighbors;//DEPRECATED NOT USED??
@@ -336,7 +337,7 @@ pbc(true)
   parse("SUMMARY",summary_file);
   string gridstride_string;
   parse("GRIDSTRIDE",gridstride_string);
-  //int gridstride=atoi(gridstride_string.c_str());
+  gridstride=atoi(gridstride_string.c_str());
   string gridstats_folder;
   parse("GRIDFOLDER",gridstats_folder);
 
@@ -455,7 +456,38 @@ pbc(true)
   // separation by computing the distance between the first TWO grid points. 
   double d2 = pow(grid_positions[1][0] - grid_positions[0][0],2) + pow(grid_positions[1][1] - grid_positions[0][1],2) + pow(grid_positions[1][2] - grid_positions[0][2],2);
   params.resolution = sqrt(d2);
-
+  double gmin_x=999999.0;
+  double gmax_x=-99999.0;
+  double gmin_y=999999.0;
+  double gmax_y=-99999.0;
+  double gmin_z=999999.0;
+  double gmax_z=-99999.0;  
+  for (int i=0; i < grid_positions.size() ; i++)
+    {
+      double gx = grid_positions[i][0];
+      double gy = grid_positions[i][1];
+      double gz = grid_positions[i][2];
+      if (gx < gmin_x)
+	gmin_x = gx;
+      if (gx > gmax_x)
+	gmax_x = gx;
+      if (gy < gmin_y)
+	gmin_y = gy;
+      if (gy > gmax_y)
+	gmax_y = gy;
+      if (gz < gmin_z)
+	gmin_z = gz;
+      if (gz > gmax_z)
+	gmax_z = gz;
+    }
+  int n_gx = int ( (gmax_x-gmin_x)/params.resolution ) + 1;
+  int n_gy = int ( (gmax_y-gmin_y)/params.resolution ) + 1;
+  int n_gz = int ( (gmax_z-gmin_z)/params.resolution ) + 1;
+  cout << "n_g is " << n_gx << " " << n_gy << " " << n_gz << endl;
+  grid_extent[0] = n_gx;
+  grid_extent[1] = n_gy;
+  grid_extent[2] = n_gz;
+  // Work out number of grid points along x/y/z components
   // Set maximum activity of grid points
   grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
 
@@ -1036,12 +1068,18 @@ void jedi::calculate(){
   //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
 
   // Now rotate all grid points at origin and then translate to new cog
+  double grid_min[3] = {99999.0, 99999.0, 99999.0};//minimum grid coordinates
   for(int i=0;i< size_grid;i++)
     {
       new_x[i]  = ( rotmat[0][0]*(grid_positions[i][0]) + rotmat[1][0]*(grid_positions[i][1]) + rotmat[2][0]*(grid_positions[i][2]) ) + new_grid_cog_x;
       new_y[i]  = ( rotmat[0][1]*(grid_positions[i][0]) + rotmat[1][1]*(grid_positions[i][1]) + rotmat[2][1]*(grid_positions[i][2]) ) + new_grid_cog_y;
       new_z[i]  = ( rotmat[0][2]*(grid_positions[i][0]) + rotmat[1][2]*(grid_positions[i][1]) + rotmat[2][2]*(grid_positions[i][2]) ) + new_grid_cog_z;
-
+      if (new_x[i] < grid_min[0])
+	grid_min[0] = new_x[i];
+      if (new_y[i] < grid_min[1])
+	grid_min[1] = new_y[i];
+      if (new_z[i] < grid_min[2])
+	grid_min[2] = new_z[i];
       //new_x[i]  = ( rotmat[0][0]*(grid_positions[i][0]) + rotmat[0][1]*(grid_positions[i][1]) + rotmat[0][2]*(grid_positions[i][2]) ) + new_grid_cog_x;
       //new_y[i]  = ( rotmat[1][0]*(grid_positions[i][0]) + rotmat[1][1]*(grid_positions[i][1]) + rotmat[1][2]*(grid_positions[i][2]) ) + new_grid_cog_y;
       //new_z[i]  = ( rotmat[2][0]*(grid_positions[i][0]) + rotmat[2][1]*(grid_positions[i][1]) + rotmat[2][2]*(grid_positions[i][2]) ) + new_grid_cog_z;
@@ -1052,18 +1090,6 @@ void jedi::calculate(){
       //cout << "grid_positions[gridpoint][2] is " << grid_positions[gridpoint][2] << endl;
       //cout << "new_x , new_y , new_z" << new_x[i] << "," << new_y[i] << "," << new_z[i] << endl; 
     }
-
-  // Here for debugging purposes, write oordinates of updated grid to a XYZ file
-  // This can be used to check that the grid has been trans/roted correctly
-  //ofstream wfile;
-  //wfile.open("grid-step1.xyz");
-  //wfile << size_grid << endl;
-  //wfile << "comment" << endl;
-  //for (int i=0; i < size_grid; i++)
-  //  {
-  //    wfile << "C " << std::fixed << std::setprecision(5) << new_x[i]*10 << " " << new_y[i]*10 << " " << new_z[i]*10 << endl;
-  //  }
-  //wfile.close();
 
   //cout << "*** Getting ready for STEP 2" << endl;
 
@@ -1277,7 +1303,7 @@ void jedi::calculate(){
   //-----------------------------------------
 
   //FIXME: Compute derivatives at the same time as potential for speed
-  //cout << " Doing derivatives " << endl;
+  cout << "@@@ Doing derivatives " << endl;
 
   unsigned n_apolar = apolaratoms.size();
   unsigned n_polar = polaratoms.size();
@@ -1616,14 +1642,71 @@ void jedi::calculate(){
       //cout << " d_Vdruglike_xpj " << d_Vdruglike_xpj << " d_Vdruglike_ypj " << d_Vdruglike_ypj << " d_Vdruglike_zpj " << d_Vdruglike_zpj <<endl; 
       //cout << " d_Va_xpj " << d_Va_xpj << " d_Va_ypj " << d_Va_ypj << " d_Va_zpj " << d_Va_zpj <<endl; 
       //cout << " d_Ha_xpj " << d_Ha_xpj << " d_Ha_ypj " << d_Ha_ypj << " d_Ha_zpj " << d_Ha_zpj <<endl; 
-      //cout << "atom j " << j << " d_Jedi_xpj " << d_Jedi_xpj << " d_Jedi_ypj " << d_Jedi_ypj << " d_Jedi_zpj " << d_Jedi_zpj << endl;
+      //cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " " << d_Jedi_xpj << " " << d_Jedi_ypj << " " << d_Jedi_zpj << endl;
       setAtomsDerivatives(j,Vector(d_Jedi_xpj,d_Jedi_ypj,d_Jedi_zpj));
       //exit(0);
     }
 
-  //TODO: Flag to output infrequently detailed grid statistics
-  // dx files with updated position and 'activitiy'
-  //                                and 'Ha'
+
+  mod = fmod(step,gridstride);
+  //cout << " gridstride is " << gridstride << endl;
+  if (!mod)
+    {
+      // Here for write oordinates of updated grid to a XYZ file
+      // This can be used to check that the grid has been trans/roted correctly
+      ofstream wfile;
+      string gridfilename = "grid-step-";
+      string tail;
+      string s;
+      stringstream out;
+      out << step;
+      s = out.str();
+      tail.append(s);
+      tail.append(".dx");
+      gridfilename.append(tail);
+      wfile.open(gridfilename.c_str());
+      // XYZ
+      //wfile << size_grid << endl;
+      //wfile << "comment" << endl;
+      //for (int i=0; i < size_grid; i++)
+      //	{
+      //	  wfile << "C " << std::fixed << std::setprecision(5) << new_x[i]*10 << " " << new_y[i]*10 << " " << new_z[i]*10 << endl;
+      //}
+      // DX
+      wfile << "object 1 class gridpositions counts " << grid_extent[0] << " " << grid_extent[1] << " " << grid_extent[2] << endl;
+      wfile << "origin " << grid_min[0]*10.0 << " " << grid_min[1]*10.0 << " " << grid_min[2]*10.0 << endl;
+      wfile << "delta " << rotmat[0][0]*params.resolution*10.0 << " " << rotmat[0][1]*params.resolution*10.0 << " " << rotmat[0][2]*params.resolution*10.0 << endl;
+      wfile << "delta " << rotmat[1][0]*params.resolution*10.0 << " " << rotmat[1][1]*params.resolution*10.0 << " " << rotmat[1][2]*params.resolution*10.0 << endl;
+      wfile << "delta " << rotmat[2][0]*params.resolution*10.0 << " " << rotmat[2][1]*params.resolution*10.0 << " " << rotmat[2][2]*params.resolution*10.0 << endl;      
+      wfile << "object 2 class gridconnections counts " << grid_extent[0] << " " << grid_extent[1] << " " << grid_extent[2] << endl;
+      wfile << "object 3 class array type double rank 0 items " << size_grid << endl;
+      for (int i=0; i < grid_extent[0]; i++)
+	{
+	  for (int j=0; j < grid_extent[1] ; j++)
+	    {
+	      for (int k=0 ; k < grid_extent[2] ; k++)
+		{
+		  // (0,0,0) --> 0
+		  // (0,0,n_gz) --> n_gz
+		  // (0,1,0) --> n_gz + 1
+		  // (0,1,n_gz) --> n_gz + n_gz
+		  // (a,b,c) --> a*n_gz*n_gy + b* n_gz + k
+		  // (1,1,1) --> 1*n_gz*n_gy + 1*n_gz + 1
+		  int index=i*grid_extent[2]*grid_extent[1] + j*grid_extent[2] + k;
+		  double ai = activity[index];
+		  wfile <<  std::fixed << std::setprecision(5) << ai;
+		  wfile << " ";
+		}
+	      wfile << endl;
+	    }
+	}
+      wfile.close();
+      // output detailed grid statistics in
+      // dx files with updated position and 'activitiy'
+      //                                and 'Ha'
+      exit(0);
+    }
+
 
   //exit(0);
 
