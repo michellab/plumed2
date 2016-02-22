@@ -875,12 +875,12 @@ void jedi::calculate(){
   site_com[1] /= site_mass;
   site_com[2] /= site_mass;
 
-  cout << " site_com " << site_com[0] << " " << site_com[1] << " " << site_com[2] << endl;
+  //cout << " site_com " << site_com[0] << " " << site_com[1] << " " << site_com[2] << endl;
   double delta_com[3];
   delta_com[0] = site_com[0] - refsite_com[0];
   delta_com[1] = site_com[1] - refsite_com[1];
   delta_com[2] = site_com[2] - refsite_com[2];
-  cout << " delta_com " << delta_com[0] << " " << delta_com[1] << " " << delta_com[2] << endl;
+  //cout << " delta_com " << delta_com[0] << " " << delta_com[1] << " " << delta_com[2] << endl;
   //exit(0);
 
   // double ref_xlist[][3] : two dimensional array of coordinates for reference conformation   --> check PLUMED RMSD code to see how to store this data
@@ -933,9 +933,9 @@ void jedi::calculate(){
   mov_to_ref[1] = ref_com[1] - mov_com[1];
   mov_to_ref[2] = ref_com[2] - mov_com[2];
 
-  cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
-  cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
-  cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
+  //cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
+  //cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
+  //cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
 
   // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
   //ofstream wfile000;
@@ -991,10 +991,10 @@ void jedi::calculate(){
   // rmsd fits as low as possible
 
   //cout << "Just called calculated_rotation_rmsd" << endl;
-  cout << "rotmat elements :" << endl;
-  cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
-  cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
-  cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
+  //cout << "rotmat elements :" << endl;
+  //cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
+  //cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
+  //cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
 
   //exit(0);
   /*
@@ -1039,13 +1039,23 @@ void jedi::calculate(){
   //rotmat[2][2] = 1.0;
   //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
   */
+
+
+
   // Translate grid_cog by delta_com
   double new_grid_cog_x;
   double new_grid_cog_y;
   double new_grid_cog_z;
-  new_grid_cog_x = grid_ref_cog[0] + delta_com[0];
-  new_grid_cog_y = grid_ref_cog[1] + delta_com[1];
-  new_grid_cog_z = grid_ref_cog[2] + delta_com[2];
+  //new_grid_cog_x = grid_ref_cog[0] + delta_com[0];
+  //new_grid_cog_y = grid_ref_cog[1] + delta_com[1];
+  //new_grid_cog_z = grid_ref_cog[2] + delta_com[2];
+  // THIS DOESN'T SOUND RIGHT
+  // WHAT ABOUT FITTING GRID COM ON REFSITE_COM ?
+  // I THINK THIS DOES NOT WORK BECAUSE IT DO NOT ROTATE ABOUT SAME CENTER
+  new_grid_cog_x = site_com[0];
+  new_grid_cog_y = site_com[1];
+  new_grid_cog_z = site_com[2];
+
   cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
 
 
@@ -1074,21 +1084,31 @@ void jedi::calculate(){
     }
 
 
-  // Update ref_pos and refsite_com with current values?
-  for (int i=0; i < n_apolarpolar ; ++i)
+  // Periodically update ref_pos and refsite_com with current values
+  // Note: do not update too frequently, otherwise fitting algorithm doesn't
+  // detect noticeable rotation
+  int step= getStep();
+  int mod = fmod(step,gridstride);
+
+  if (!mod)
     {
-      Vector i_pos = getPosition( i );
-      ref_pos[i][0] = i_pos[0];
-      ref_pos[i][1] = i_pos[1];
-      ref_pos[i][2] = i_pos[2];
+      cout << "step " << step << " Updating reference grid positions " << endl;
+      //if (step >0)
+      //	exit(0);
+      for (int i=0; i < n_apolarpolar ; ++i)
+	{
+	  Vector i_pos = getPosition( i );
+	  ref_pos[i][0] = i_pos[0];
+	  ref_pos[i][1] = i_pos[1];
+	  ref_pos[i][2] = i_pos[2];
+	}
+      refsite_com[0] = site_com[0];
+      refsite_com[1] = site_com[1];
+      refsite_com[2] = site_com[2];
+      grid_ref_cog[0] = new_grid_cog_x;
+      grid_ref_cog[1] = new_grid_cog_y;
+      grid_ref_cog[2] = new_grid_cog_z;
     }
-  refsite_com[0] = site_com[0];
-  refsite_com[1] = site_com[1];
-  refsite_com[2] = site_com[2];
-  grid_ref_cog[0] = new_grid_cog_x;
-  grid_ref_cog[1] = new_grid_cog_y;
-  grid_ref_cog[2] = new_grid_cog_z;
-  
   //exit(0);
   //cout << "*** Getting ready for STEP 2" << endl;
 
@@ -1296,8 +1316,7 @@ void jedi::calculate(){
   // << " " << COM_x << " " << COM_y << " " << COM_z << " " << score[0] << " " << score[1] << " "
   // << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " << score[7] << " " << score[8] <<endl;
 
-  int step= getStep();
-  int mod =fmod(step,stride);
+  mod =fmod(step,stride);
   //cout << " we are at step " << step << " we dump ? " << mod << endl;
   if (!mod)
     {
