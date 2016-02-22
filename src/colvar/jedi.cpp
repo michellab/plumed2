@@ -257,32 +257,23 @@ private:
   int stride;//frequency of output (in timesteps) to summary file;
   string gridstats_folder;//path to output grid folder;
   int gridstride;//frequency of output (in timestep) of a grid file;
-  //DEPRECATED
-  //vector<vector<int> > rays;
-  //vector<vector<int> > neighbors;//DEPRECATED NOT USED??
-  //vector<vector<double> > grid_pos;//DEPRECATED replaced by grid_positions
-  //vector<double> pocket;//DEPRECATED, replaced by grid_s_off_bsi
-  //float score[9];//rotation matrix elements
-  //vector<AtomNumber> Apolar;//for plumed.dat file DEPRECATED replaced by apolaratoms
-  //vector<AtomNumber> Polar;// for plumed.dat file DEPRECATED replaced by polaratoms
 
-  double site_com[3];//reference coordinates of the center of mass of the binding site region
+  double refsite_com[3];//reference coordinates of the center of mass of the binding site region
   double grid_ref_cog[3];//reference coordinates of the center of geometry of the grid
-  //double COM_X, COM_Y, COM_Z;// coordinates of the center of mass of the binding site region
 
-  double b_grid;//atom number of the first grid point
+  //double b_grid;//atom number of the first grid point
   double n_grid;// total number of grid points (double)
-  double cutoff_close;//cutoff close contact
-  double cutoff_far;//cutoff distant contact
-  double cutoff_enclosure;//cutoff NP for distant contact
-  double cutoff_hull;//cutoff hull
-  double cutoff_surface;//cutoff surface
-  double cutoff_contact;//cutoff contact for surface
-  double cutoff_hydro;//cutoff hydrophobicity
-  double cutoff_con;//cutoff connectivity
-  double dump_matrix;//paramater to control the output of jedi (just to check, could be set to 0)
+  //double cutoff_close;//cutoff close contact
+  //double cutoff_far;//cutoff distant contact
+  //double cutoff_enclosure;//cutoff NP for distant contact
+  //double cutoff_hull;//cutoff hull
+  //double cutoff_surface;//cutoff surface
+  //double cutoff_contact;//cutoff contact for surface
+  //double cutoff_hydro;//cutoff hydrophobicity
+  //double cutoff_con;//cutoff connectivity
+  //double dump_matrix;//paramater to control the output of jedi (just to check, could be set to 0)
   double delta;
-  string line;
+  //string line;
 public:
  jedi(const ActionOptions&);
 // active methods:
@@ -342,7 +333,6 @@ pbc(true)
   string gridstats_folder;
   parse("GRIDFOLDER",gridstats_folder);
 
-
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
   pbc=!nopbc;
@@ -350,7 +340,7 @@ pbc(true)
 
   if(pbc)
     log.printf("  using periodic boundary conditions\n");
-  else 
+  else
     log.printf("  without periodic boundary conditions\n");
 
   addValueWithDerivatives(); setNotPeriodic();
@@ -358,7 +348,7 @@ pbc(true)
   cout << "*** Initialisation of JEDI collective variable ***" << endl;
 
   //Apolar
-  vector<AtomNumber> Apolar;
+  //vector<AtomNumber> Apolar;
   //cout << " Apolar has ? elements " << Apolar.size() << endl;
 
   PDB apolar_pdb;
@@ -366,17 +356,49 @@ pbc(true)
     error("missing input file " + apolar_file );
 
   apolaratoms = apolar_pdb.getAtomNumbers();
+  const std::vector<Vector> apolar_positions = apolar_pdb.getPositions();
+  const std::vector<double> apolar_masses = apolar_pdb.getOccupancy();
   cout << " apolaratoms has ? elements " << apolaratoms.size() << endl;  
 
   //Polar 
-  vector<AtomNumber> Polar;
+  //vector<AtomNumber> Polar;
   //cout << " Polar has ? elements " << Polar.size() << endl;
 
   PDB polar_pdb;
   if( !polar_pdb.read(polar_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
     error("missing input file " + polar_file );
   polaratoms = polar_pdb.getAtomNumbers();
+  const std::vector<Vector> polar_positions = polar_pdb.getPositions();
+  const std::vector<double> polar_masses = polar_pdb.getOccupancy();
   cout << " polaratoms has ? elements " << polaratoms.size() << endl;
+
+  // Also compute the com of reference coordinates and save for future calcs
+  double site_mass_tot=0.0;
+  refsite_com[0] = 0.0;
+  refsite_com[1] = 0.0;
+  refsite_com[2] = 0.0;
+  for (unsigned i=0; i < apolaratoms.size() ; ++i)
+    {
+      refsite_com[0] += apolar_masses[i] * apolar_positions[i][0];
+      refsite_com[1] += apolar_masses[i] * apolar_positions[i][1];
+      refsite_com[2] += apolar_masses[i] * apolar_positions[i][2];
+      ref_pos.push_back( Vector(apolar_positions[i][0], apolar_positions[i][1], apolar_positions[i][2]) );
+      site_mass_tot += apolar_masses[i];
+    }
+  for (unsigned i=0; i < polaratoms.size() ; ++i)
+    {
+      refsite_com[0] += polar_masses[i] * polar_positions[i][0];
+      refsite_com[1] += polar_masses[i] * polar_positions[i][1];
+      refsite_com[2] += polar_masses[i] * polar_positions[i][2];
+      ref_pos.push_back( Vector(polar_positions[i][0], polar_positions[i][1], polar_positions[i][2]) );
+      site_mass_tot += polar_masses[i];
+    }
+  refsite_com[0] /= site_mass_tot;
+  refsite_com[1] /= site_mass_tot;
+  refsite_com[2] /= site_mass_tot;
+
+  cout << " refsite_com " << refsite_com[0] << " " << refsite_com[1] << " " << refsite_com[2] << endl;
+  //exit(0);
 
   // Load up alignment file
   PDB reference_pdb;
@@ -397,12 +419,15 @@ pbc(true)
       ref_com[0] += alignment_masses[i] * alignment_positions[i][0];
       ref_com[1] += alignment_masses[i] * alignment_positions[i][1];
       ref_com[2] += alignment_masses[i] * alignment_positions[i][2];
-      ref_pos.push_back( Vector(alignment_positions[i][0], alignment_positions[i][1], alignment_positions[i][2]) );
+      //ref_pos.push_back( Vector(alignment_positions[i][0], alignment_positions[i][1], alignment_positions[i][2]) );
       ref_mass_tot += alignment_masses[i];
     }
   ref_com[0] /= ref_mass_tot;
   ref_com[1] /= ref_mass_tot;
   ref_com[2] /= ref_mass_tot;
+
+  cout << " ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
+
 
   // Add the alignment atom numbers to the list of atoms to request from the CV
   alignmentatoms = reference_pdb.getAtomNumbers();
@@ -768,49 +793,6 @@ vector<double> set_bs_values( vector<Vector> grid_pos,
 // calculator
 void jedi::calculate(){
 
-  //int i, j, jj, k, l, gridpoint;
-  //int i,j,k,l,gridpoint;
-  //double Jedi, volume, a, b, hydrophobicity, constant, grd_x, grd_y, grd_z;
-  //double Vg, mod_rij, mod_rjk, mod_rik, pe, sum, min_dist;// penalty_close
-  //double penalty_far;
-  //double ncoord;// D_far;
-  //double D_close;// D_enclosure;
-  //double s1, s2, current, time1, time2, Va, Vmax, Vmin, D_Vmax, D_Vmin;//, prev_snap;
-  //double apolar, polar, D_hydro, hydrophobicity_tot;
-  //unsigned int size_apolar;
-  //unsigned int size_polar;
-  //vector<double> s3_m;// array with the derivative of distant contact
-  //vector<double> s4_m; // array with the derivative of distant contact
-  //vector<double> connectivity_list; // array with the number of active grid points around each grid points according to s_on
-  //vector<double> hull_list;// array with the hull score of each grid points
-  //vector<double> surface_list;// array with the surface score of each grid points
-  //vector<double> ncontact_surface_list;// array number of protein atoms in contact with each grid point (for derivatives)
-  //volume      = 0.;// score volume : total number of active and partially active grid points
-  //D_close     = 0.05;// delta close contact
-  //D_far       = 0.05;// delta distant contact
-  //resolution  = 0.15;// grid spacing
-  //s1          = 0.0;// minimum volume according our drug-like dataset
-  //s2          = 0.0;// maximum volume according our drug-like dataset
-  //Va          = 0.0;// penalty non drug-like pockets ( s1 * s2 )
-  //Vmin        = cutoff_hull;// minimum volume if volume < Vmin --> s1 = 0
-  //D_Vmin      = 10.0;// delta minimum volume volume > Vmin + D_Vmin --> s1 = 1
-  //Vmax        = 90.0;// minimum volume if volume < Vmax --> s2 = 1
-  //D_Vmax      = 50.0;// delta maximum volume volume > Vmax + D_Vmin --> s1 = 0
-  //Jedi        = 0.;// jedi score :-)
-  //a           = 0.059*Vmax;//just to normalise the volume according the trainning dataset Vmax
-  //b           = 24.29;//coefficient hydrophobicity derived from PLS
-  //  c           =  0.8032;//coefficient connectivity derived from PLS
-  //constant    = -13.39;//constant derived from PLS
-  //time1       = getTimeStep();// time step from gromacs
-  //time2       = getStep();// step i from gromacs
-  //current     = time1*time2;// current snapshot (in ps)
-
-  //size_apolar      =  Apolar.size();//total number of apolar atoms in the CV
-  //size_polar       =  Polar.size();//total number of polar atoms in the CV
-  //hydrophobicity     = 0.;//score hydrophobicity
-  //hydrophobicity_tot = 0.;//sum of the hydrophobicity scores of each grid point
-  //D_hydro            = 0.05;
-
   unsigned size_grid = grid_positions.size();
   //vector<int> active_grid;// array with the index of active grid point (0 if inactive)
   //double activity[size_grid];//array of activity scores for each grid point
@@ -874,50 +856,32 @@ void jedi::calculate(){
   //-----------------------------------------
   //-----------------------------------------
 
-  //int start;
-  //int max;
-  //max   = n_grid;
-  // FIXME: This seem to do nothing useful?
-  //for (i=0; i<max; i++)
-  // {
-  //   j = b_grid+i-1;
-  //   //nbr[i] = j;
-  // }
-  //cout << "nbr[i] is " << nbr[i] << " j is " << j << endl;
-
   // Check the translation of the center of mass of the binding site region
 
-  // calculate COM from current snapshot
-  //double COM_x=0, sum_x=0;
-  //double COM_y=0, sum_y=0;
-  //double COM_z=0, sum_z=0;
+  unsigned n_apolar = apolaratoms.size();
+  unsigned n_apolarpolar = n_apolar + polaratoms.size();
+  double site_com[3] = {0.0, 0.0 ,0.0};
+  double site_mass=0.0;
+  for (unsigned j =0; j < n_apolarpolar ; j++)
+    {
+      double j_mass = getMass(j);
+      Vector j_pos = getPosition(j);
+      site_com[0] += j_mass * j_pos[0];
+      site_com[1] += j_mass * j_pos[1];
+      site_com[2] += j_mass * j_pos[2];
+      site_mass += j_mass;
+    }
+  site_com[0] /= site_mass;
+  site_com[1] /= site_mass;
+  site_com[2] /= site_mass;
 
-  //double sum_x=0;
-  //double sum_y=0;
-  //double sum_z=0;
-  //double mass_tot=0;
-  // cout << "Checking translation of the center of mass" << endl; 
-  //cout << " init sum_x  " << sum_x << " " << sum_y << " " << sum_z << " " << mass_tot << endl;
-
-  //cout << "Apolar has size " << Apolar.size() << endl;
-  //cout << " Polar has size " << Polar.size() << endl;
-
-  //for( j = 0; j < Apolar.size() + Polar.size() ; j++)
-  //int jstart = apolaratoms.size() + polaratoms.size();
-  //for( unsigned j = jstart; j < jstart + alignmentatoms.size()  ; j++)
-  //  {
-  //    sum_x += ( getMass(j) ) * ( getPosition(j)[0] );
-  //    sum_y += ( getMass(j) ) * ( getPosition(j)[1] );
-  //    sum_z += ( getMass(j) ) * ( getPosition(j)[2] );
-  //    mass_tot += getMass(j);
-  //    //cout << " J " << j << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
-  //    //cout << "sum_x " << sum_x << " sum_y " << sum_y << " sum_z " << sum_z << " mass_tot " << mass_tot << endl;
-  //  }
-  //
-  //double COM_x = sum_x/mass_tot;
-  //double COM_y = sum_y/mass_tot;
-  //double COM_z = sum_z/mass_tot;
-  //cout << "calculating COM over xyz " << COM_x << " " << COM_y << " " << COM_z << endl;    
+  cout << " site_com " << site_com[0] << " " << site_com[1] << " " << site_com[2] << endl;
+  double delta_com[3];
+  delta_com[0] = site_com[0] - refsite_com[0];
+  delta_com[1] = site_com[1] - refsite_com[1];
+  delta_com[2] = site_com[2] - refsite_com[2];
+  cout << " delta_com " << delta_com[0] << " " << delta_com[1] << " " << delta_com[2] << endl;
+  //exit(0);
 
   // double ref_xlist[][3] : two dimensional array of coordinates for reference conformation   --> check PLUMED RMSD code to see how to store this data
   // double mov_xlist[][3] : two dimensional array of coordinates for current conformation     --> check PLUMED RMSD code to see how to access this data
@@ -939,20 +903,22 @@ void jedi::calculate(){
 
   double mov_mass_tot=0.0;
 
-  for (int i=0; i < n_align ; ++i)
+  //for (int i=0; i < n_align ; ++i)
+  for (int i=0; i < n_apolarpolar ; ++i)
     {
       ref_xlist[i][0] = ref_pos[i][0];//FIXME change calculate_rotation_rmsd args to take directly vector in
       ref_xlist[i][1] = ref_pos[i][1];
       ref_xlist[i][2] = ref_pos[i][2];
-      //Vector i_pos = getPosition( Apolar.size() + Polar.size() + i );// Not sure this is giving expected behavior
-      Vector i_pos = getPosition( apolaratoms.size() + polaratoms.size() + i );// MUST CHECK that PBC DO NOT MESS THINGS UP
+      //Vector i_pos = getPosition( n_apolarpolar + i );// MUST CHECK that PBC DO NOT MESS THINGS UP
+      Vector i_pos = getPosition( i );
       mov_xlist[i][0] = i_pos[0];
       mov_xlist[i][1] = i_pos[1];
       mov_xlist[i][2] = i_pos[2];
       //cout << " i " << i << " mov_xlist " << mov_xlist[i][0] << " " << mov_xlist[i][1] << " " << mov_xlist[i][2] << endl;
       //cout << " i " << i << " ref_xlist " << ref_xlist[i][0] << " " << ref_xlist[i][1] << " " << ref_xlist[i][2] << endl;      
       // Also get data to compute mov_com
-      double i_mass = getMass( apolaratoms.size() + polaratoms.size() + i );//FIXME this is a constant so could be cached
+      //double i_mass = getMass( n_apolarpolar + i );//FIXME this is a constant so could be cached
+      double i_mass = getMass( i );
       mov_mass_tot += i_mass;
       mov_com[0] += i_mass * i_pos[0];
       mov_com[1] += i_mass * i_pos[1];
@@ -967,10 +933,9 @@ void jedi::calculate(){
   mov_to_ref[1] = ref_com[1] - mov_com[1];
   mov_to_ref[2] = ref_com[2] - mov_com[2];
 
-  //  cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
-  //cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
-  //cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
-
+  cout << "mov_com " << mov_com[0] << " " << mov_com[1] << " " << mov_com[2] << endl;
+  cout << "ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
+  cout << " mov_to_ref " << mov_to_ref[0] << " " << mov_to_ref[1] << " " << mov_to_ref[2] << endl;
 
   // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
   //ofstream wfile000;
@@ -983,7 +948,18 @@ void jedi::calculate(){
   //  }
   //wfile000.close();
 
-  calculate_rotation_rmsd( ref_xlist, mov_xlist, n_align, mov_com, mov_to_ref, rotmat, &rmsd  );
+  rotmat[0][0] = 1.0;
+  rotmat[0][1] = 0.0;
+  rotmat[0][2] = 0.0;
+  rotmat[1][0] = 0.0;
+  rotmat[1][1] = 1.0;
+  rotmat[1][2] = 0.0;
+  rotmat[2][0] = 0.0;
+  rotmat[2][1] = 0.0;
+  rotmat[2][2] = 1.0;
+
+  //calculate_rotation_rmsd( ref_xlist, mov_xlist, n_align, mov_com, mov_to_ref, rotmat, &rmsd  );
+  calculate_rotation_rmsd( ref_xlist, mov_xlist, n_apolarpolar, mov_com, mov_to_ref, rotmat, &rmsd  );
 
   // Here mov_xlist should end up centered on origin
   //ofstream wfile001;
@@ -1007,29 +983,21 @@ void jedi::calculate(){
   //wfile002.close();
 
   // Normally expect low rmsd value
-  //cout << " The rmsd is " << rmsd << endl;
+  cout << " The rmsd is " << rmsd << endl;
 
   // OPTIMISATION?
   // For systems that fluctuate a lot in alignement coordinates it may be better 
   // to update the reference coordinates after one iteration, so as to keep
   // rmsd fits as low as possible
 
-  //rotmat[0][0] = 1.0;
-  //rotmat[0][1] = 0.0;
-  //rotmat[0][2] = 0.0;
-  //rotmat[1][0] = 0.0;
-  //rotmat[1][1] = 1.0;
-  //rotmat[1][2] = 0.0;
-  //rotmat[2][0] = 0.0;
-  //rotmat[2][1] = 0.0;
-  //rotmat[2][2] = 1.0;
-
   //cout << "Just called calculated_rotation_rmsd" << endl;
-  //cout << "rotmat elements :" << endl;
-  //cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
-  //cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
-  //cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
+  cout << "rotmat elements :" << endl;
+  cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
+  cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
+  cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
 
+  //exit(0);
+  /*
   double new_grid_cog_x, local_grid_cog_x;
   double new_grid_cog_y, local_grid_cog_y;
   double new_grid_cog_z, local_grid_cog_z;
@@ -1037,7 +1005,6 @@ void jedi::calculate(){
   new_grid_cog_x = grid_ref_cog[0] - mov_to_ref[0];
   new_grid_cog_y = grid_ref_cog[1] - mov_to_ref[1];
   new_grid_cog_z = grid_ref_cog[2] - mov_to_ref[2];
-  //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
   // Now shift origin to mov_com
   local_grid_cog_x = new_grid_cog_x - mov_com[0];
   local_grid_cog_y = new_grid_cog_y - mov_com[1];
@@ -1070,22 +1037,31 @@ void jedi::calculate(){
   //rotmat[2][0] = 0.0;
   //rotmat[2][1] = 0.0;
   //rotmat[2][2] = 1.0;
-
   //cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
+  */
+  // Translate grid_cog by delta_com
+  double new_grid_cog_x;
+  double new_grid_cog_y;
+  double new_grid_cog_z;
+  new_grid_cog_x = grid_ref_cog[0] + delta_com[0];
+  new_grid_cog_y = grid_ref_cog[1] + delta_com[1];
+  new_grid_cog_z = grid_ref_cog[2] + delta_com[2];
+  cout << " New grid cog " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << endl;
+
 
   // Now rotate all grid points at origin and then translate to new cog
-  double grid_min[3] = {99999.0, 99999.0, 99999.0};//minimum grid coordinates
+  //double grid_min[3] = {99999.0, 99999.0, 99999.0};//minimum grid coordinates
   for(unsigned i=0;i< size_grid;i++)
     {
       new_x[i]  = ( rotmat[0][0]*(grid_positions[i][0]) + rotmat[1][0]*(grid_positions[i][1]) + rotmat[2][0]*(grid_positions[i][2]) ) + new_grid_cog_x;
       new_y[i]  = ( rotmat[0][1]*(grid_positions[i][0]) + rotmat[1][1]*(grid_positions[i][1]) + rotmat[2][1]*(grid_positions[i][2]) ) + new_grid_cog_y;
       new_z[i]  = ( rotmat[0][2]*(grid_positions[i][0]) + rotmat[1][2]*(grid_positions[i][1]) + rotmat[2][2]*(grid_positions[i][2]) ) + new_grid_cog_z;
-      if (new_x[i] < grid_min[0])
-	grid_min[0] = new_x[i];
-      if (new_y[i] < grid_min[1])
-	grid_min[1] = new_y[i];
-      if (new_z[i] < grid_min[2])
-	grid_min[2] = new_z[i];
+      //if (new_x[i] < grid_min[0])
+      //	grid_min[0] = new_x[i];
+      //if (new_y[i] < grid_min[1])
+      //	grid_min[1] = new_y[i];
+      //if (new_z[i] < grid_min[2])
+      //	grid_min[2] = new_z[i];
       //new_x[i]  = ( rotmat[0][0]*(grid_positions[i][0]) + rotmat[0][1]*(grid_positions[i][1]) + rotmat[0][2]*(grid_positions[i][2]) ) + new_grid_cog_x;
       //new_y[i]  = ( rotmat[1][0]*(grid_positions[i][0]) + rotmat[1][1]*(grid_positions[i][1]) + rotmat[1][2]*(grid_positions[i][2]) ) + new_grid_cog_y;
       //new_z[i]  = ( rotmat[2][0]*(grid_positions[i][0]) + rotmat[2][1]*(grid_positions[i][1]) + rotmat[2][2]*(grid_positions[i][2]) ) + new_grid_cog_z;
@@ -1097,6 +1073,23 @@ void jedi::calculate(){
       //cout << "new_x , new_y , new_z" << new_x[i] << "," << new_y[i] << "," << new_z[i] << endl; 
     }
 
+
+  // Update ref_pos and refsite_com with current values?
+  for (int i=0; i < n_apolarpolar ; ++i)
+    {
+      Vector i_pos = getPosition( i );
+      ref_pos[i][0] = i_pos[0];
+      ref_pos[i][1] = i_pos[1];
+      ref_pos[i][2] = i_pos[2];
+    }
+  refsite_com[0] = site_com[0];
+  refsite_com[1] = site_com[1];
+  refsite_com[2] = site_com[2];
+  grid_ref_cog[0] = new_grid_cog_x;
+  grid_ref_cog[1] = new_grid_cog_y;
+  grid_ref_cog[2] = new_grid_cog_z;
+  
+  //exit(0);
   //cout << "*** Getting ready for STEP 2" << endl;
 
   //-----------------------------------------
@@ -1113,8 +1106,8 @@ void jedi::calculate(){
   double volume=0.0;
   double hydrophobicity_tot=0.0;
   //----------> Compute activity of grid points and also VOLUME
-  unsigned n_apolar = apolaratoms.size();
-  unsigned n_apolarpolar = n_apolar + polaratoms.size();
+  //unsigned n_apolar = apolaratoms.size();
+  //unsigned n_apolarpolar = n_apolar + polaratoms.size();
   for(unsigned i = 0; i < size_grid ; i++)
     {
       double sum = 0.;
@@ -1753,11 +1746,57 @@ void jedi::calculate(){
       //}
       // DX
       wfile << "object 1 class gridpositions counts " << grid_extent[0] << " " << grid_extent[1] << " " << grid_extent[2] << endl;
+
+      double origin[3] = {0.0,0.0,0.0};
+      double step_z[3] = {0.0,0.0,0.0};
+      double delta_z[3] = {0.0,0.0,0.0};
+      double step_y[3] = {0.0,0.0,0.0};
+      double delta_y[3] = {0.0,0.0,0.0};
+      double step_x[3] = {0.0,0.0,0.0};
+      double delta_x[3] = {0.0,0.0,0.0};
+      origin[0] = new_x[grid_origin_idx];
+      origin[1] = new_y[grid_origin_idx];
+      origin[2] = new_z[grid_origin_idx];
+      step_z[0] = new_x[1];
+      step_z[1] = new_y[1];
+      step_z[2] = new_z[1];
+      delta_z[0] = step_z[0] - origin[0];
+      delta_z[1] = step_z[1] - origin[1];
+      delta_z[2] = step_z[2] - origin[2];
+      step_y[0] = new_x[ grid_extent[2] ];
+      step_y[1] = new_y[ grid_extent[2] ];
+      step_y[2] = new_z[ grid_extent[2] ];
+      delta_y[0] = step_y[0] - origin[0];
+      delta_y[1] = step_y[1] - origin[1];
+      delta_y[2] = step_y[2] - origin[2];
+      step_x[0] = new_x[grid_extent[1]*grid_extent[2] ];
+      step_x[1] = new_y[grid_extent[1]*grid_extent[2]];
+      step_x[2] = new_z[grid_extent[1]*grid_extent[2]];
+      delta_x[0] = step_x[0] - origin[0];
+      delta_x[1] = step_x[1] - origin[1];
+      delta_x[2] = step_x[2] - origin[2];
+
+
+      cout << " origin " << origin[0] << " " << origin[1] << " " << origin[2] << endl;
+      cout << " step_z " << step_z[0] << " " << step_z[1] << " " << step_z[2] << endl;
+      cout << " delta_z " << delta_z[0] << " " << delta_z[1] << " " << delta_z[2] << endl;      
+      cout << " step_y " << step_y[0] << " " << step_y[1] << " " << step_y[2] << endl;
+      cout << " delta_y " << delta_y[0] << " " << delta_y[1] << " " << delta_y[2] << endl; 
+      cout << " step_x " << step_x[0] << " " << step_x[1] << " " << step_x[2] << endl;
+      cout << " delta_x " << delta_x[0] << " " << delta_x[1] << " " << delta_x[2] << endl; 
+
+      //exit(0);
+
       //wfile << "origin " << grid_min[0]*10.0 << " " << grid_min[1]*10.0 << " " << grid_min[2]*10.0 << endl;
-      wfile << "origin " << new_x[grid_origin_idx]*10.0 << " " << new_y[grid_origin_idx]*10.0 << " " << new_z[grid_origin_idx]*10.0 << endl;
-      wfile << "delta " << rotmat[0][0]*params.resolution*10.0 << " " << rotmat[0][1]*params.resolution*10.0 << " " << rotmat[0][2]*params.resolution*10.0 << endl;
-      wfile << "delta " << rotmat[1][0]*params.resolution*10.0 << " " << rotmat[1][1]*params.resolution*10.0 << " " << rotmat[1][2]*params.resolution*10.0 << endl;
-      wfile << "delta " << rotmat[2][0]*params.resolution*10.0 << " " << rotmat[2][1]*params.resolution*10.0 << " " << rotmat[2][2]*params.resolution*10.0 << endl;      
+      wfile << "origin " << origin[0]*10.0 << " " << origin[1]*10.0 << " " << origin[2]*10.0 << endl;
+      // UPDATE CODE HERE
+      // FIND COORDS FIRST GRID POINT ALONG Z --> 1
+      // FIND COORDS FIRST GRID POINT ALONG Y --> n_gz +1
+      // FIND COORDS FIRST GRID POINT ALONG X --> n_gz*g_y + n_gz + 1
+      // CALC DELTA X, DELTA Y, DELTA Z
+      wfile << "delta " << delta_x[0]*10.0 << " " << delta_x[1]*10.0 << " " << delta_x[2]*10.0 << endl;
+      wfile << "delta " << delta_y[0]*10.0 << " " << delta_y[1]*10.0 << " " << delta_y[2]*10.0 << endl;
+      wfile << "delta " << delta_z[0]*10.0 << " " << delta_z[1]*10.0 << " " << delta_z[2]*10.0 << endl;
       wfile << "object 2 class gridconnections counts " << grid_extent[0] << " " << grid_extent[1] << " " << grid_extent[2] << endl;
       wfile << "object 3 class array type double rank 0 items " << size_grid << endl;
       for (int i=0; i < grid_extent[0]; i++)
