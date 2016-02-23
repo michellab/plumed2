@@ -294,7 +294,7 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("compulsory","POLAR","a file in pdb format containing the polar protein atoms to use for the CV.");
   keys.add("compulsory","GRID","a file in pdb format containing the grid points to use for the CV.");
   keys.add("compulsory","PARAMETERS","a file listing the parameters of the JEDI estimator.");
-  keys.add("compulsory", "SITE","a file listing coordinates of atoms used to define a binding site region.");
+  keys.add("optional", "SITE","a file listing coordinates of atoms used to define a binding site region.");
   keys.add("compulsory","STRIDE","100","frequency of output to jedi summary file.");
   keys.add("compulsory","SUMMARY","jedi_stats.dat","summary file jedi descriptor.");
   keys.add("compulsory","GRIDSTRIDE","100","frequency of output of jedi grid.");
@@ -1353,6 +1353,7 @@ void jedi::calculate(){
   //-----------------------------------------
 
   //FIXME: Compute derivatives at the same time as potential for speed
+  
   cout << "@@@ Doing derivatives step " << step << endl;
 
   //unsigned n_apolar = apolaratoms.size();
@@ -1373,10 +1374,22 @@ void jedi::calculate(){
   //dij_vec.reserve(n_active_grid);
   dij_vec.reserve(size_grid);
 
+  vector<double> d_Jedi_xpj_vec;
+  d_Jedi_xpj_vec.reserve(n_cv_atoms);
+  vector<double> d_Jedi_ypj_vec;
+  d_Jedi_ypj_vec.reserve(n_cv_atoms);
+  vector<double> d_Jedi_zpj_vec;
+  d_Jedi_zpj_vec.reserve(n_cv_atoms);
+
   double sum_d_Jedi_xpj =0.0;
   double sum_d_Jedi_ypj =0.0;
   double sum_d_Jedi_zpj =0.0;
-  //n_cv_atoms=0;
+  double sum_d_Jedi_torque_xpj=0.0;
+  double sum_d_Jedi_torque_ypj=0.0;
+  double sum_d_Jedi_torque_zpj=0.0;
+
+  mod = fmod(step,gridstride);
+
   for ( unsigned j=0; j < n_cv_atoms ; j++)
     {
       double xj = getPosition(j)[0];
@@ -1533,9 +1546,10 @@ void jedi::calculate(){
 	  //double term2_x = s_on_mind[grid_index] * d_Sonexposurei_xpj;
 	  double term1_x = s_on_contacts[grid_index] * d_Sonmindi_xpj;
 	  double term2_x = s_on_mind[grid_index] * d_Soncontactsi_xpj;
+	  //cout << " s_on_contacts " << s_on_contacts[grid_index] << " d_Sonmindi_xpj " << d_Sonmindi_xpj << endl;
 	  //cout << "  d_Sonexposurei_xpj" <<  d_Sonexposurei_xpj << endl;
 	  double d_ai_xpj = grid_s_off_bsi[grid_index] * term1_x * term2_x;
-	  //cout << " grid_s_off_bsi[grid_index] " << grid_s_off_bsi[grid_index] << " term1 " << term1 << " term2 " << term2 << endl;
+	  //cout << " grid_s_off_bsi[grid_index] " << grid_s_off_bsi[grid_index] << " term1_x " << term1_x << " term2_x " << term2_x << endl;
 	  // d_ai_ypj
 	  //double term1_y = s_on_exposure[grid_index] * d_Sonmindi_ypj;
 	  //double term2_y = s_on_mind[grid_index] * d_Sonexposurei_ypj;
@@ -1550,11 +1564,11 @@ void jedi::calculate(){
 	  double d_ai_zpj = grid_s_off_bsi[grid_index] * term1_z * term2_z;
 	  //cout << " i " << i << " grid_index " << grid_index << " exposure " << exposure[grid_index] << " d_exposure_xpj  " << d_exposure_xpj << endl;
 	  //cout << " j atom " << j << " active grid i " << i << " activity " << activity[grid_index] << " d_ij " << dij << " d_Sonmindi_xpj " <<  d_Sonmindi_xpj << " y " << d_Sonmindi_ypj << " z " << d_Sonmindi_zpj << " d_exposure_xpj " << d_exposure_xpj << " d_Sonexposurei_xpj  " << d_Sonexposurei_xpj << endl;
-	  /*cout << " j atom " << j << " i grid " << i << " activity "	\
-	       << activity[grid_index] << " dij " << dij << " d_ai_xpj " \
-	       << d_ai_xpj << " d_ai_ypj " << d_ai_ypj		\
-	       << " d_ai_zpj " << d_ai_zpj << endl;*/
-	    /*								\
+	  //cout << " j atom " << j << " i grid " << i << " activity "	\
+	  //     << activity[grid_index] << " dij " << dij << " d_ai_xpj " \
+	  //     << d_ai_xpj << " d_ai_ypj " << d_ai_ypj		\
+	  //     << " d_ai_zpj " << d_ai_zpj << endl;
+	  /*								\
 	       << " d_Sonexposurei_m " << d_Sonexposurei_m		\
 	       << " Exposure " << exposure[grid_index]		\
 	       << " d_exposure_xpj " << d_exposure_xpj \
@@ -1573,6 +1587,7 @@ void jedi::calculate(){
 	}
       //exit(0);
       // Compute Vdrug_like derivatives
+      //cout << "sum_d_ai_dj " << sum_d_ai_xpj << " " << sum_d_ai_ypj << " " << sum_d_ai_zpj << endl;
       double d_V_xpj = sum_d_ai_xpj*Vg;
       double d_V_ypj = sum_d_ai_ypj*Vg;
       double d_V_zpj = sum_d_ai_zpj*Vg;
@@ -1704,10 +1719,22 @@ void jedi::calculate(){
       double term3_x=(params.alpha*d_Va_xpj+params.beta*d_Ha_xpj);
       double term3_y=(params.alpha*d_Va_ypj+params.beta*d_Ha_ypj);
       double term3_z=(params.alpha*d_Va_zpj+params.beta*d_Ha_zpj);
-      double d_Jedi_xpj=Jedi*(term1_x+term2*term3_x);
-      double d_Jedi_ypj=Jedi*(term1_y+term2*term3_y);
-      double d_Jedi_zpj=Jedi*(term1_z+term2*term3_z);
 
+      double d_Jedi_xpj;
+      double d_Jedi_ypj;
+      double d_Jedi_zpj;
+      if (!mod)
+	{
+	  d_Jedi_xpj=Jedi*(term1_x+term2*term3_x);
+	  d_Jedi_ypj=Jedi*(term1_y+term2*term3_y);
+	  d_Jedi_zpj=Jedi*(term1_z+term2*term3_z);
+	}
+      else
+	{
+	  d_Jedi_xpj=0.0;
+	  d_Jedi_ypj=0.0;
+	  d_Jedi_zpj=0.0;
+	}
       //double miniterm1_x=(1/(params.alpha*Va))*(params.alpha*d_Va_xpj);
       //double miniterm2_x=(1/Vdrug_like)*d_Vdruglike_xpj;
       //miniterm2_x=0.0;
@@ -1726,15 +1753,51 @@ void jedi::calculate(){
       //cout << " d_Vdruglike_xpj " << d_Vdruglike_xpj << " d_Vdruglike_ypj " << d_Vdruglike_ypj << " d_Vdruglike_zpj " << d_Vdruglike_zpj <<endl; 
       //cout << " d_Va_xpj " << d_Va_xpj << " d_Va_ypj " << d_Va_ypj << " d_Va_zpj " << d_Va_zpj <<endl; 
       //cout << " d_Ha_xpj " << d_Ha_xpj << " d_Ha_ypj " << d_Ha_ypj << " d_Ha_zpj " << d_Ha_zpj <<endl; 
-      //cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " " << d_Jedi_xpj << " " << d_Jedi_ypj << " " << d_Jedi_zpj << " " << d_Va_xpj << " " << d_Va_ypj << " " << d_Va_zpj << " " << " " << d_Ha_xpj << " " << d_Ha_ypj << " " << d_Ha_zpj << " " << d_Vdruglike_xpj << " " << d_Vdruglike_ypj << " " << d_Vdruglike_zpj << endl;
-      setAtomsDerivatives(j,Vector(d_Jedi_xpj,d_Jedi_ypj,d_Jedi_zpj));
+      unsigned pdb_idx = 0;
+      if (j < n_apolar)
+	pdb_idx = apolaratoms[j].index();
+      else
+	pdb_idx = polaratoms[j-n_apolar].index();
+      //cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " ( " << pdb_idx << " ) " << d_Jedi_xpj << " " << d_Jedi_ypj << " " << d_Jedi_zpj << " " << d_Va_xpj << " " << d_Va_ypj << " " << d_Va_zpj << " " << " " << d_Ha_xpj << " " << d_Ha_ypj << " " << d_Ha_zpj << " " << d_Vdruglike_xpj << " " << d_Vdruglike_ypj << " " << d_Vdruglike_zpj << endl;
+      d_Jedi_xpj_vec[j] = d_Jedi_xpj;
+      d_Jedi_ypj_vec[j] = d_Jedi_ypj;
+      d_Jedi_zpj_vec[j] = d_Jedi_zpj;
       //exit(0);
       sum_d_Jedi_xpj += d_Jedi_xpj;
       sum_d_Jedi_ypj += d_Jedi_ypj;
       sum_d_Jedi_zpj += d_Jedi_zpj;
+      // JM also accumulate torques
+      // Should we do this w.r.t to com??
+      double d_Jedi_torque_xpj=d_Jedi_ypj*zj-d_Jedi_zpj*yj;
+      double d_Jedi_torque_ypj=d_Jedi_zpj*xj-d_Jedi_xpj*zj;
+      double d_Jedi_torque_zpj=d_Jedi_xpj*yj-d_Jedi_ypj*xj;
+      sum_d_Jedi_torque_xpj += d_Jedi_torque_xpj;
+      sum_d_Jedi_torque_ypj += d_Jedi_torque_ypj;
+      sum_d_Jedi_torque_zpj += d_Jedi_torque_zpj;
     }
   //exit(0);
+
+  // Now we need to remove net force and torques introduced by JEDI
   cout << "Jedi gradient " << sum_d_Jedi_xpj << " " << sum_d_Jedi_ypj << " " << sum_d_Jedi_zpj << endl;
+  cout << "Jedi torque " << sum_d_Jedi_torque_xpj << " " << sum_d_Jedi_torque_ypj << " " << sum_d_Jedi_torque_zpj << endl;
+  // See SI of Ovchinnikov & Karplus J. Phys. Chem. B 2012, 116, 8584−8603
+  // and Cline & Plemmons SIAM review Vol 18 January 1 1976
+  // Step 1) Form v
+  double v[6] = { -sum_d_Jedi_xpj, -sum_d_Jedi_ypj, -sum_d_Jedi_zpj,\
+		  -sum_d_Jedi_torque_xpj, -sum_d_Jedi_torque_ypj, -sum_d_Jedi_torque_zpj};
+  // Step 2) Form linear equation matrix S
+  // Step 3) Compute transpose S_t
+  // Step 4) Compute SS_t
+  // Step 5) Compute (SS_t)^-1
+  // Step 6) Compute f = S_t(SS_t)^-1v
+
+  // For each atom, set derivatives
+  for ( unsigned j=0; j < n_cv_atoms ; j++)
+    {
+      setAtomsDerivatives(j,Vector(d_Jedi_xpj_vec[j],d_Jedi_ypj_vec[j],d_Jedi_zpj_vec[j]));
+    }
+  exit(0);
+  // Occasionally save grids
   mod = fmod(step,gridstride);
   //cout << " gridstride is " << gridstride << endl;
   if (!mod)
@@ -1796,13 +1859,13 @@ void jedi::calculate(){
       delta_x[2] = step_x[2] - origin[2];
 
 
-      cout << " origin " << origin[0] << " " << origin[1] << " " << origin[2] << endl;
-      cout << " step_z " << step_z[0] << " " << step_z[1] << " " << step_z[2] << endl;
-      cout << " delta_z " << delta_z[0] << " " << delta_z[1] << " " << delta_z[2] << endl;      
-      cout << " step_y " << step_y[0] << " " << step_y[1] << " " << step_y[2] << endl;
-      cout << " delta_y " << delta_y[0] << " " << delta_y[1] << " " << delta_y[2] << endl; 
-      cout << " step_x " << step_x[0] << " " << step_x[1] << " " << step_x[2] << endl;
-      cout << " delta_x " << delta_x[0] << " " << delta_x[1] << " " << delta_x[2] << endl; 
+      //cout << " origin " << origin[0] << " " << origin[1] << " " << origin[2] << endl;
+      //cout << " step_z " << step_z[0] << " " << step_z[1] << " " << step_z[2] << endl;
+      //cout << " delta_z " << delta_z[0] << " " << delta_z[1] << " " << delta_z[2] << endl;      
+      //cout << " step_y " << step_y[0] << " " << step_y[1] << " " << step_y[2] << endl;
+      //cout << " delta_y " << delta_y[0] << " " << delta_y[1] << " " << delta_y[2] << endl; 
+      //cout << " step_x " << step_x[0] << " " << step_x[1] << " " << step_x[2] << endl;
+      //cout << " delta_x " << delta_x[0] << " " << delta_x[1] << " " << delta_x[2] << endl; 
 
       //exit(0);
 
