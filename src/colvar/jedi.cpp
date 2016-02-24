@@ -37,6 +37,8 @@
 
 // Kabsch algorithm implementation
 #include "kabsch.h"
+// Lapack needed for l2-mininum norm solution
+#include "../tools/lapack/lapack.h"
 
 typedef double real;
 
@@ -1388,7 +1390,9 @@ void jedi::calculate(){
   double sum_d_Jedi_torque_ypj=0.0;
   double sum_d_Jedi_torque_zpj=0.0;
 
-  mod = fmod(step,gridstride);
+  // Update derivative every x steps
+  mod = fmod(step,1);
+  //mod = fmod(step,gridstride);
 
   for ( unsigned j=0; j < n_cv_atoms ; j++)
     {
@@ -1767,7 +1771,6 @@ void jedi::calculate(){
       sum_d_Jedi_ypj += d_Jedi_ypj;
       sum_d_Jedi_zpj += d_Jedi_zpj;
       // JM also accumulate torques
-      // Should we do this w.r.t to com??
       double d_Jedi_torque_xpj=d_Jedi_ypj*zj-d_Jedi_zpj*yj;
       double d_Jedi_torque_ypj=d_Jedi_zpj*xj-d_Jedi_xpj*zj;
       double d_Jedi_torque_zpj=d_Jedi_xpj*yj-d_Jedi_ypj*xj;
@@ -1780,23 +1783,221 @@ void jedi::calculate(){
   // Now we need to remove net force and torques introduced by JEDI
   cout << "Jedi gradient " << sum_d_Jedi_xpj << " " << sum_d_Jedi_ypj << " " << sum_d_Jedi_zpj << endl;
   cout << "Jedi torque " << sum_d_Jedi_torque_xpj << " " << sum_d_Jedi_torque_ypj << " " << sum_d_Jedi_torque_zpj << endl;
+
   // See SI of Ovchinnikov & Karplus J. Phys. Chem. B 2012, 116, 8584−8603
   // and Cline & Plemmons SIAM review Vol 18 January 1 1976
-  // Step 1) Form v
-  double v[6] = { -sum_d_Jedi_xpj, -sum_d_Jedi_ypj, -sum_d_Jedi_zpj,\
-		  -sum_d_Jedi_torque_xpj, -sum_d_Jedi_torque_ypj, -sum_d_Jedi_torque_zpj};
-  // Step 2) Form linear equation matrix S
-  // Step 3) Compute transpose S_t
-  // Step 4) Compute SS_t
-  // Step 5) Compute (SS_t)^-1
-  // Step 6) Compute f = S_t(SS_t)^-1v
+  // We have Ax=y and solution x is undetermined
+  // We want the least-squares solution that is given by
+  // z = (A+)y
+  // Where A+ is the Moore-Penrose pseudo inverse matrix A+ = A*(AA*-1)
+  // where A* is the transpose
 
-  // For each atom, set derivatives
-  for ( unsigned j=0; j < n_cv_atoms ; j++)
+  // Step 2) Form A
+  unsigned nrows=6;
+  unsigned ncols=3*n_cv_atoms;
+  Matrix<double> A( nrows, ncols );
+
+  for (unsigned j=0; j < ncols; j++)
+    {
+      if (j < n_cv_atoms)
+	{
+	  A[0][j] = 1.0;
+	  A[1][j] = 0.0;
+	  A[2][j] = 0.0;
+	  A[3][j] = 0.0;
+	  A[4][j] = -getPosition(j)[2];//Opt by storing once all position vectors?
+	  A[5][j] = getPosition(j)[1];
+	}
+      else if (j < 2*n_cv_atoms)
+	{
+	  A[0][j] = 0.0;
+	  A[1][j] = 1.0;
+	  A[2][j] = 0.0;
+	  A[3][j] = getPosition(j)[2];
+	  A[4][j] = 0.0;
+	  A[5][j] = -getPosition(j)[0];
+	}
+      else
+	{
+	  A[0][j] = 0.0;
+	  A[1][j] = 0.0;
+	  A[2][j] = 1.0;
+	  A[3][j] = -getPosition(j)[1];
+	  A[4][j] = getPosition(j)[0];
+	  A[5][j] = 0.0;
+	}
+    }
+
+  /*cout << "*** A *** " << endl;
+  for (int i=0; i < nrows; i++)
+    {
+      for (int j=0; j < ncols ; j++)
+	{
+	  //A[i][j] = 1.0;
+	  cout << A[i][j] << " ";
+	}
+      cout << endl;
+      }*/
+  // Step 3) Compute Moore-Penrose pseudo inverse A+ = A*(AA*)-1
+  Matrix<double> Aplus( ncols, nrows);
+  // Plumed implementation uses singular value decomposition via plumed_lapack_dgesdd
+  // Is this the most numerically stable option?
+  pseudoInvert(A, Aplus);
+
+  /*cout << "*** A+ *** " << endl;
+  for (int i=0; i < ncols; i++)
+    {
+      for (int j=0; j < nrows ; j++)
+	{
+	  cout << Aplus[i][j] << " ";
+	}
+      cout << endl;
+      }*/
+
+  // Multiple iterations
+  // Is this wise? adds more random forces,
+  // may eventually blow up integrator?
+  int max_it = 10;
+  double tol= 0.01;
+  for (int k=0; k < max_it;k++)
+    {
+      cout << "cancelling net force/torque step " << k << " ... " << endl;
+      // Step 1) Form y
+      vector<double> y;
+      y.resize(6);
+      y[0] = -sum_d_Jedi_xpj;
+      y[1] = -sum_d_Jedi_ypj;
+      y[2] = -sum_d_Jedi_zpj;
+      y[3] = -sum_d_Jedi_torque_xpj;
+      y[4] = -sum_d_Jedi_torque_ypj;
+      y[5] = -sum_d_Jedi_torque_zpj;
+
+      /*cout << "*** y" << endl;
+	for (int i=0; i < 6; i++)
+	{
+	cout << y[i] << endl;
+	}
+      */
+
+      // Step 4) Compute z = (A+)y
+      vector<double> z;
+      z.resize(3*n_cv_atoms);
+      //cout << "y size " << y.size() << endl;
+      //cout << "Aplus.ncols " << Aplus.ncols() << endl;
+      //cout << "Aplus.nrows " << Aplus.nrows() << endl;
+      //cout << " z size " << z.size() << endl;
+
+      mult(Aplus,y,z);
+      /*cout << "*** z" << endl;
+	for (int i=0;i<3*n_cv_atoms;i = i +3)
+	{
+	int j = i/3;
+	//cout << j << " " << z[i] << " " << z[i+1] << " " << z[i+2] << endl;
+	//cout << z[i] << " " << z[i+1] << " " << z[i+2] << endl;
+	cout << z[i] << endl;
+	//z[i] = 0.0; z[i+1] =0.0; z[i+2] = 0.0;
+	}*/
+      // Step 5) Now correct derivatives and verify that net forces and torque are
+      // close to zero
+      double sum_d_Jedistar_xpj=0.0;
+      double sum_d_Jedistar_ypj=0.0;
+      double sum_d_Jedistar_zpj=0.0;
+      double sum_d_Jedistar_torque_xpj=0.0;
+      double sum_d_Jedistar_torque_ypj=0.0;
+      double sum_d_Jedistar_torque_zpj=0.0;
+      for ( unsigned j=0; j < n_cv_atoms ; j++)
+	{
+	  double d_Jedistar_xpj = d_Jedi_xpj_vec[j] + z[3*j];
+	  d_Jedi_xpj_vec[j] = d_Jedistar_xpj;
+	  double d_Jedistar_ypj = d_Jedi_ypj_vec[j] + z[3*j+1];
+	  d_Jedi_ypj_vec[j] = d_Jedistar_ypj;
+	  double d_Jedistar_zpj = d_Jedi_zpj_vec[j] + z[3*j+2];
+	  d_Jedi_zpj_vec[j] = d_Jedistar_zpj;
+	  
+	  double d_Jedistar_torque_xpj = getPosition(j)[1]*d_Jedistar_zpj - \
+	    getPosition(j)[2]*d_Jedistar_ypj;
+	  double d_Jedistar_torque_ypj = getPosition(j)[2]*d_Jedistar_xpj - \
+	    getPosition(j)[0]*d_Jedistar_zpj;
+	  double d_Jedistar_torque_zpj = getPosition(j)[0]*d_Jedistar_ypj - \
+	    getPosition(j)[1]*d_Jedistar_xpj;
+
+	  sum_d_Jedistar_xpj += d_Jedistar_xpj;
+	  sum_d_Jedistar_ypj += d_Jedistar_ypj;
+	  sum_d_Jedistar_zpj += d_Jedistar_zpj;
+	  sum_d_Jedistar_torque_xpj += d_Jedistar_torque_xpj;
+	  sum_d_Jedistar_torque_ypj += d_Jedistar_torque_ypj;
+	  sum_d_Jedistar_torque_zpj += d_Jedistar_torque_zpj;
+	  //setAtomsDerivatives(j,Vector(d_Jedistar_xpj,d_Jedistar_ypj,d_Jedistar_zpj));
+	}
+
+      cout << "sum_d_Jedistar_der " << sum_d_Jedistar_xpj << " " << sum_d_Jedistar_ypj << " " << sum_d_Jedistar_zpj << endl; 
+      double l2_norm2 = sum_d_Jedistar_xpj*sum_d_Jedistar_xpj + sum_d_Jedistar_ypj*sum_d_Jedistar_ypj + sum_d_Jedistar_zpj*sum_d_Jedistar_zpj;
+      double l2_norm = sqrt(l2_norm2);
+      cout << " norm d_Jedisar " << l2_norm << endl;
+      cout << "sum_d_Jedistar_torque_der " << sum_d_Jedistar_torque_xpj << " " \
+	   << sum_d_Jedistar_torque_ypj << " " << sum_d_Jedistar_torque_zpj << endl;
+
+      sum_d_Jedi_xpj= sum_d_Jedistar_xpj;
+      sum_d_Jedi_ypj= sum_d_Jedistar_ypj;
+      sum_d_Jedi_zpj= sum_d_Jedistar_zpj;
+      sum_d_Jedi_torque_xpj= sum_d_Jedistar_torque_xpj;
+      sum_d_Jedi_torque_ypj= sum_d_Jedistar_torque_zpj;;
+      sum_d_Jedi_torque_zpj= sum_d_Jedistar_torque_zpj;
+
+      if (l2_norm < tol)
+	break;
+
+    }
+
+  for (int j=0; j < n_cv_atoms;j++)
     {
       setAtomsDerivatives(j,Vector(d_Jedi_xpj_vec[j],d_Jedi_ypj_vec[j],d_Jedi_zpj_vec[j]));
     }
+
   exit(0);
+
+  // Second pass, subtract residual derivatives/n from each atom?
+  // This will eliminate the net force, but NOT the net torque
+  // Or is it better to iterate the pseudo inverse calculation until
+  // no residual to within tolerance?
+  /*
+  double sum_dJedistar2_xpj=0.0;
+  double sum_dJedistar2_ypj=0.0;
+  double sum_dJedistar2_zpj=0.0;
+  double sum_dJedistar_torque2_xpj=0.0;
+  double sum_dJedistar_torque2_ypj=0.0;
+  double sum_dJedistar_torque2_zpj=0.0;
+
+  for ( unsigned j=0; j < n_cv_atoms ; j++)
+    {
+      double d_Jedistar2_xpj = d_Jedi_xpj_vec[j] + z[3*j] - sum_dJedistar_xpj/n_cv_atoms;
+      double d_Jedistar2_ypj = d_Jedi_ypj_vec[j] + z[3*j+1] - sum_dJedistar_ypj/n_cv_atoms;
+      double d_Jedistar2_zpj = d_Jedi_zpj_vec[j] + z[3*j+2] - sum_dJedistar_zpj/n_cv_atoms;
+      double d_Jedistar_torque2_xpj = getPosition(j)[1]*d_Jedistar2_zpj -\
+	getPosition(j)[2]*d_Jedistar2_ypj;
+      double d_Jedistar_torque2_ypj = getPosition(j)[2]*d_Jedistar2_xpj -\
+	getPosition(j)[0]*d_Jedistar2_zpj;
+      double d_Jedistar_torque2_zpj = getPosition(j)[0]*d_Jedistar2_ypj -\
+	getPosition(j)[1]*d_Jedistar2_xpj;
+
+      sum_dJedistar2_xpj += d_Jedistar2_xpj;
+      sum_dJedistar2_ypj += d_Jedistar2_ypj;
+      sum_dJedistar2_zpj += d_Jedistar2_zpj;
+      sum_dJedistar_torque2_xpj += d_Jedistar_torque2_xpj;
+      sum_dJedistar_torque2_ypj += d_Jedistar_torque2_ypj;
+      sum_dJedistar_torque2_zpj += d_Jedistar_torque2_zpj;
+
+      setAtomsDerivatives(j,Vector(d_Jedistar2_xpj,d_Jedistar2_ypj,d_Jedistar2_zpj));      
+    }
+
+  cout << "sum_dJedistar2_der " << sum_dJedistar2_xpj << " " << sum_dJedistar2_ypj << " " << sum_dJedistar2_zpj << endl; 
+  l2_norm2 = sum_dJedistar2_xpj*sum_dJedistar2_xpj + sum_dJedistar2_ypj*sum_dJedistar2_ypj + sum_dJedistar2_zpj*sum_dJedistar2_zpj;
+  l2_norm = sqrt(l2_norm2);
+  cout << " norm d_Jedistar2 " << l2_norm << endl;
+  cout << "sum_dJedistar_torque2_der " << sum_dJedistar_torque2_xpj << " " \
+       << sum_dJedistar_torque2_ypj << " " << sum_dJedistar_torque2_zpj << endl;
+  */
+  //exit(0);
   // Occasionally save grids
   mod = fmod(step,gridstride);
   //cout << " gridstride is " << gridstride << endl;
