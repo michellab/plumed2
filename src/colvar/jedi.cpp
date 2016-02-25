@@ -534,7 +534,7 @@ pbc(true)
   // JM TODO: Check behavior CV init upon job restart.
   ofstream wfile;
   wfile.open(summary_file.c_str());
-  wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t COM_x \t COM-y \t COM_z \t RotMat[0][0].Rotmat[0][1]....Rotmat[2][2]" << endl;
+  wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t Grad_x \t Grad_y \t Grad_z \t Torque_x \t Torque_y \t Torquez \t MaxDerivIdx \t max_deriv_x \t max_deriv_y \t max_deriv_z \t rmsd" << endl;
   wfile.close();
 
   //TODO CHECK IF FOLDER GRIDSTATS_FOLDER EXISTS
@@ -1088,9 +1088,10 @@ void jedi::calculate(){
 
   // Periodically update ref_pos and refsite_com with current values
   // Note: do not update too frequently, otherwise fitting algorithm doesn't
-  // detect noticeable rotation
+  // detect noticeable rotation??
   int step= getStep();
-  int mod = fmod(step,gridstride);
+  //int mod = fmod(step,gridstride);
+  int mod = fmod(step,1);
 
   if (!mod)
     {
@@ -1317,24 +1318,6 @@ void jedi::calculate(){
   // cout << current << " " << Jedi << " " << Vdrug_like << " " << Ha << " " << volume/Vmax
   // << " " << COM_x << " " << COM_y << " " << COM_z << " " << score[0] << " " << score[1] << " "
   // << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " << score[7] << " " << score[8] <<endl;
-
-  mod =fmod(step,stride);
-  //cout << " we are at step " << step << " we dump ? " << mod << endl;
-  if (!mod)
-    {
-      ofstream wfile;
-      //wfile.open("jedi_output.dat",std::ios_base::app); // This command allows you to append data to a file that already exists
-      wfile.open(summary_file.c_str(),std::ios_base::app);
-      //wfile << current << " " << Jedi << " " << Vdrug_like << " " << Ha << " " << Va
-      //	    << " " << COM_x << " " << COM_y << " " << COM_z << " " << score[0] << " " << score[1] << " "
-      //    << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " 
-      //    << score[7] << " " << score[8] <<endl;
-      wfile << step << " " << Jedi << " " << Vdrug_like << " " << Va << " " << Ha 
-      	    << " " << new_grid_cog_x << " " << new_grid_cog_y << " " << new_grid_cog_z << " " << rotmat[0][0] << " " << rotmat[0][1] << " "
-          << rotmat[0][2] << " " << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << " " << rotmat[2][0] << " " 
-          << rotmat[2][1] << " " << rotmat[2][2] << endl;
-      wfile.close();
-    }
 
   //FIXME: Add code to write grid coordinates as a dx file
   // Write with GRIDSTRIDE frequency
@@ -1771,9 +1754,17 @@ void jedi::calculate(){
       sum_d_Jedi_ypj += d_Jedi_ypj;
       sum_d_Jedi_zpj += d_Jedi_zpj;
       // JM also accumulate torques
-      double d_Jedi_torque_xpj=d_Jedi_ypj*zj-d_Jedi_zpj*yj;
-      double d_Jedi_torque_ypj=d_Jedi_zpj*xj-d_Jedi_xpj*zj;
-      double d_Jedi_torque_zpj=d_Jedi_xpj*yj-d_Jedi_ypj*xj;
+      // is this right? r cross gradient
+      // tx = ry gradz - rz grady
+      // ty = rz gradx - rx gradz
+      // tz = rx grady - ry gradx
+      double d_Jedi_torque_xpj=(yj)*d_Jedi_zpj-(zj)*d_Jedi_ypj;
+      double d_Jedi_torque_ypj=(zj)*d_Jedi_xpj-(xj)*d_Jedi_zpj;
+      double d_Jedi_torque_zpj=(xj)*d_Jedi_ypj-(yj)*d_Jedi_xpj;
+      // looks like I am doing gradient cross r below...
+      //double d_Jedi_torque_xpj=d_Jedi_ypj*(zj-site_com[2])-d_Jedi_zpj*(yj-site_com[1]);
+      //double d_Jedi_torque_ypj=d_Jedi_zpj*(xj-site_com[0])-d_Jedi_xpj*(zj-site_com[2]);
+      //double d_Jedi_torque_zpj=d_Jedi_xpj*(yj-site_com[1])-d_Jedi_ypj*(xj-site_com[0]);
       sum_d_Jedi_torque_xpj += d_Jedi_torque_xpj;
       sum_d_Jedi_torque_ypj += d_Jedi_torque_ypj;
       sum_d_Jedi_torque_zpj += d_Jedi_torque_zpj;
@@ -1789,7 +1780,7 @@ void jedi::calculate(){
   // We have Ax=y and solution x is undetermined
   // We want the least-squares solution that is given by
   // z = (A+)y
-  // Where A+ is the Moore-Penrose pseudo inverse matrix A+ = A*(AA*-1)
+  // Where A+ is the Moore-Penrose pseudo inverse matrix A+ = A*(AA*)-1
   // where A* is the transpose
 
   // Step 2) Form A
@@ -1805,25 +1796,25 @@ void jedi::calculate(){
 	  A[1][j] = 0.0;
 	  A[2][j] = 0.0;
 	  A[3][j] = 0.0;
-	  A[4][j] = -getPosition(j)[2];//Opt by storing once all position vectors?
-	  A[5][j] = getPosition(j)[1];
+	  A[4][j] = getPosition(j)[2];//+site_com[2];//Opt by storing once all position vectors?
+	  A[5][j] = -getPosition(j)[1];//-site_com[1];
 	}
       else if (j < 2*n_cv_atoms)
 	{
 	  A[0][j] = 0.0;
 	  A[1][j] = 1.0;
 	  A[2][j] = 0.0;
-	  A[3][j] = getPosition(j)[2];
+	  A[3][j] = -getPosition(j-n_cv_atoms)[2];//-site_com[2];
 	  A[4][j] = 0.0;
-	  A[5][j] = -getPosition(j)[0];
+	  A[5][j] = getPosition(j-n_cv_atoms)[0];//+site_com[0];
 	}
       else
 	{
 	  A[0][j] = 0.0;
 	  A[1][j] = 0.0;
 	  A[2][j] = 1.0;
-	  A[3][j] = -getPosition(j)[1];
-	  A[4][j] = getPosition(j)[0];
+	  A[3][j] = getPosition(j-2*n_cv_atoms)[1];//+site_com[1];
+	  A[4][j] = -getPosition(j-2*n_cv_atoms)[0];//-site_com[0];
 	  A[5][j] = 0.0;
 	}
     }
@@ -1857,7 +1848,7 @@ void jedi::calculate(){
   // Multiple iterations
   // Is this wise? adds more random forces,
   // may eventually blow up integrator?
-  int max_it = 10;
+  int max_it = 1;
   double tol= 0.01;
   for (int k=0; k < max_it;k++)
     {
@@ -1888,15 +1879,36 @@ void jedi::calculate(){
       //cout << " z size " << z.size() << endl;
 
       mult(Aplus,y,z);
-      /*cout << "*** z" << endl;
-	for (int i=0;i<3*n_cv_atoms;i = i +3)
+      //cout << "*** z" << endl;
+      //for (int i=0;i<3*n_cv_atoms;i++)
+      //	{
+      // cout << "i " << i << " " << z[i] << endl;
+      //	}
+
+      //cout << " *** sum me " << endl;
+      double sum_z[3] = {0.0,0.0,0.0};
+      double sum_rcrossz[3] = {0.0,0.0,0.0};
+      for (int j=0; j < n_cv_atoms; j++)
 	{
-	int j = i/3;
-	//cout << j << " " << z[i] << " " << z[i+1] << " " << z[i+2] << endl;
-	//cout << z[i] << " " << z[i+1] << " " << z[i+2] << endl;
-	cout << z[i] << endl;
-	//z[i] = 0.0; z[i+1] =0.0; z[i+2] = 0.0;
-	}*/
+	  //int j = i/3;
+	  double xj = getPosition(j)[0];
+	  double yj = getPosition(j)[1];
+	  double zj = getPosition(j)[2];
+	  double fx = z[j+0*n_cv_atoms];
+	  double fy = z[j+1*n_cv_atoms];
+	  double fz = z[j+2*n_cv_atoms];
+	  //cout << " j " << j << " fx " << fx << " fy " << fy << " fz " << fz << endl;
+	  sum_z[0] += fx;
+	  sum_z[1] += fy;
+	  sum_z[2] += fz;
+	  sum_rcrossz[0] += yj*fz-zj*fy;
+	  sum_rcrossz[1] += zj*fx-xj*fz;
+	  sum_rcrossz[2] += xj*fy-yj*fx;
+	}
+	  //z[i] = 0.0; z[i+1] =0.0; z[i+2] = 0.0;
+      cout << "sum_z " << sum_z[0] << " " << sum_z[1] << " " << sum_z[2] << endl;
+      cout << "sum_rcrossz " << sum_rcrossz[0] << " " << sum_rcrossz[1] << " " << sum_rcrossz[2] << endl;
+      //exit(0);
       // Step 5) Now correct derivatives and verify that net forces and torque are
       // close to zero
       double sum_d_Jedistar_xpj=0.0;
@@ -1907,41 +1919,40 @@ void jedi::calculate(){
       double sum_d_Jedistar_torque_zpj=0.0;
       for ( unsigned j=0; j < n_cv_atoms ; j++)
 	{
-	  double d_Jedistar_xpj = d_Jedi_xpj_vec[j] + z[3*j];
-	  d_Jedi_xpj_vec[j] = d_Jedistar_xpj;
-	  double d_Jedistar_ypj = d_Jedi_ypj_vec[j] + z[3*j+1];
-	  d_Jedi_ypj_vec[j] = d_Jedistar_ypj;
-	  double d_Jedistar_zpj = d_Jedi_zpj_vec[j] + z[3*j+2];
-	  d_Jedi_zpj_vec[j] = d_Jedistar_zpj;
-	  
-	  double d_Jedistar_torque_xpj = getPosition(j)[1]*d_Jedistar_zpj - \
-	    getPosition(j)[2]*d_Jedistar_ypj;
-	  double d_Jedistar_torque_ypj = getPosition(j)[2]*d_Jedistar_xpj - \
-	    getPosition(j)[0]*d_Jedistar_zpj;
-	  double d_Jedistar_torque_zpj = getPosition(j)[0]*d_Jedistar_ypj - \
-	    getPosition(j)[1]*d_Jedistar_xpj;
-
+	  double xj = getPosition(j)[0];
+	  double yj = getPosition(j)[1];
+	  double zj = getPosition(j)[2];
+	  double d_Jedistar_xpj = d_Jedi_xpj_vec[j] + z[j+0*n_cv_atoms];
+	  double d_Jedistar_ypj = d_Jedi_ypj_vec[j] + z[j+1*n_cv_atoms];
+	  double d_Jedistar_zpj = d_Jedi_zpj_vec[j] + z[j+2*n_cv_atoms];
+	  double d_Jedistar_torque_xpj = (yj)*d_Jedistar_zpj-(zj)*d_Jedistar_ypj;
+	  double d_Jedistar_torque_ypj = (zj)*d_Jedistar_xpj-(xj)*d_Jedistar_zpj;
+	  double d_Jedistar_torque_zpj = (xj)*d_Jedistar_ypj-(yj)*d_Jedistar_xpj;
 	  sum_d_Jedistar_xpj += d_Jedistar_xpj;
 	  sum_d_Jedistar_ypj += d_Jedistar_ypj;
 	  sum_d_Jedistar_zpj += d_Jedistar_zpj;
 	  sum_d_Jedistar_torque_xpj += d_Jedistar_torque_xpj;
 	  sum_d_Jedistar_torque_ypj += d_Jedistar_torque_ypj;
 	  sum_d_Jedistar_torque_zpj += d_Jedistar_torque_zpj;
+
+	  d_Jedi_xpj_vec[j] = d_Jedistar_xpj;
+	  d_Jedi_ypj_vec[j] = d_Jedistar_ypj;
+	  d_Jedi_zpj_vec[j] = d_Jedistar_zpj;
 	  //setAtomsDerivatives(j,Vector(d_Jedistar_xpj,d_Jedistar_ypj,d_Jedistar_zpj));
 	}
 
-      cout << "sum_d_Jedistar_der " << sum_d_Jedistar_xpj << " " << sum_d_Jedistar_ypj << " " << sum_d_Jedistar_zpj << endl; 
+      //cout << "sum_d_Jedistar_der " << sum_d_Jedistar_xpj << " " << sum_d_Jedistar_ypj << " " << sum_d_Jedistar_zpj << endl; 
       double l2_norm2 = sum_d_Jedistar_xpj*sum_d_Jedistar_xpj + sum_d_Jedistar_ypj*sum_d_Jedistar_ypj + sum_d_Jedistar_zpj*sum_d_Jedistar_zpj;
       double l2_norm = sqrt(l2_norm2);
-      cout << " norm d_Jedisar " << l2_norm << endl;
-      cout << "sum_d_Jedistar_torque_der " << sum_d_Jedistar_torque_xpj << " " \
-	   << sum_d_Jedistar_torque_ypj << " " << sum_d_Jedistar_torque_zpj << endl;
+      //cout << " norm d_Jedisar " << l2_norm << endl;
+      //cout << "sum_d_Jedistar_torque_der " << sum_d_Jedistar_torque_xpj << " " \
+      //	   << sum_d_Jedistar_torque_ypj << " " << sum_d_Jedistar_torque_zpj << endl;
 
       sum_d_Jedi_xpj= sum_d_Jedistar_xpj;
       sum_d_Jedi_ypj= sum_d_Jedistar_ypj;
       sum_d_Jedi_zpj= sum_d_Jedistar_zpj;
       sum_d_Jedi_torque_xpj= sum_d_Jedistar_torque_xpj;
-      sum_d_Jedi_torque_ypj= sum_d_Jedistar_torque_zpj;;
+      sum_d_Jedi_torque_ypj= sum_d_Jedistar_torque_ypj;;
       sum_d_Jedi_torque_zpj= sum_d_Jedistar_torque_zpj;
 
       if (l2_norm < tol)
@@ -1949,12 +1960,31 @@ void jedi::calculate(){
 
     }
 
+  cout << "Final Jedi gradient " << sum_d_Jedi_xpj << " " << sum_d_Jedi_ypj << " " << sum_d_Jedi_zpj << endl;
+  cout << "Final Jedi torque " << sum_d_Jedi_torque_xpj << " " << sum_d_Jedi_torque_ypj << " " << sum_d_Jedi_torque_zpj << endl;
+
+  double max_d_Jedi_der[3]= {0.0,0.0,0.0};
+  double max_norm=0.0;
+  int max_der_idx=-1;
   for (int j=0; j < n_cv_atoms;j++)
     {
+      double d_Jedi_dx=d_Jedi_xpj_vec[j];
+      double d_Jedi_dy=d_Jedi_ypj_vec[j];
+      double d_Jedi_dz=d_Jedi_zpj_vec[j];
+      double norm2=d_Jedi_dx*d_Jedi_dx+d_Jedi_dy*d_Jedi_dz+d_Jedi_dz*d_Jedi_dz;
+      double norm=sqrt(norm2);
+      if (norm > max_norm)
+	{
+	  max_norm=norm;
+	  max_der_idx = j;
+	  max_d_Jedi_der[0] = d_Jedi_dx;
+	  max_d_Jedi_der[1] = d_Jedi_dy;
+	  max_d_Jedi_der[2] = d_Jedi_dz;
+	}
       setAtomsDerivatives(j,Vector(d_Jedi_xpj_vec[j],d_Jedi_ypj_vec[j],d_Jedi_zpj_vec[j]));
     }
 
-  exit(0);
+  //exit(0);
 
   // Second pass, subtract residual derivatives/n from each atom?
   // This will eliminate the net force, but NOT the net torque
@@ -1998,6 +2028,21 @@ void jedi::calculate(){
        << sum_dJedistar_torque2_ypj << " " << sum_dJedistar_torque2_zpj << endl;
   */
   //exit(0);
+
+  mod =fmod(step,stride);
+  //cout << " we are at step " << step << " we dump ? " << mod << endl;
+  if (!mod)
+    {
+      ofstream wfile;
+      wfile.open(summary_file.c_str(),std::ios_base::app);
+      wfile << std::setprecision(5) << step << " " << Jedi << " " << Vdrug_like << " " << Va << " " << Ha 
+      	    << " " << sum_d_Jedi_xpj << " " << sum_d_Jedi_ypj << " " << sum_d_Jedi_zpj \
+	    << " " << sum_d_Jedi_torque_xpj << " " << sum_d_Jedi_torque_ypj << " " << sum_d_Jedi_torque_zpj \
+	    << " " << max_der_idx << " " << max_d_Jedi_der[0] << " " << max_d_Jedi_der[1] << " " << max_d_Jedi_der[2] 
+	    << " " << rmsd << endl;
+      wfile.close();
+    }
+
   // Occasionally save grids
   mod = fmod(step,gridstride);
   //cout << " gridstride is " << gridstride << endl;
