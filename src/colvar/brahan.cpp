@@ -7,10 +7,14 @@ If you use the following template for this file then the manual and the calls to
 //\verbatim
 #include "Colvar.h"
 #include "ActionRegister.h"
+#include "core/PlumedMain.h"
+#include "tools/PDB.h"
+
 
 #include <string>
 #include <cmath>
 #include <cassert>
+#include <vector>
 
 using namespace std;
 
@@ -31,6 +35,10 @@ At this point you provide the description of your CV that will appear in the man
 */
 class Brahan : public Colvar {
 	double param;
+private:
+ vector<AtomNumber> reactant_atoms;//list of reactant atoms used for CV
+
+
 public:
  //---- This routine is used to create the descriptions of all the keywords used by your CV
  static void registerKeywords( Keywords& keys ); 
@@ -51,11 +59,12 @@ PLUMED_REGISTER_ACTION(Brahan,"BRAHAN")
  //----- The following routine creates the documentation for the keyowrds used by your CV
 void Brahan::registerKeywords( Keywords& keys ){
   Colvar::registerKeywords(keys);
- // ActionAtomistic::registerKeywords(keys);
+  ActionAtomistic::registerKeywords(keys);
  // ActionWithValue::registerKeywords(keys);
  // keys.remove("NUMERICAL_DERIVATIVES");
 //\endverbatim
   keys.add("compulsory", "PARAM", "the value of input");
+  keys.add("compulsory", "REACTANT", "the pdb of reactant");
 //In here you should add all your descriptions of the keywords used by your colvar as well as descriptions of any components
 //that you can use this colvar to calculate. Descriptions as to how to do this can be found here: \ref usingDoxygen
 
@@ -70,10 +79,18 @@ PLUMED_COLVAR_INIT(ao)
 {
   //vector<int> atoms;  /----- You almost always have atoms -----/
   parse("PARAM",param);
-// fake request to avoid error
-  std::vector<AtomNumber> atoms;
-   
+  string reactant_file;
+  parse("REACTANT",reactant_file);
   
+  PDB reactant_pdb;
+  if( !reactant_pdb.read(reactant_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
+    error("missing input file " + reactant_file );
+
+  reactant_atoms = reactant_pdb.getAtomNumbers();
+  const std::vector<Vector> reactant_positions = reactant_pdb.getPositions();
+  const std::vector<double> reactant_masses = reactant_pdb.getOccupancy();
+  cout << " Reactant has ? elements " << reactant_atoms.size() << endl; 
+ // cout << " reactant_positions[0][0] " << reactant_positions[0][0] << endl; 
 //\endverbatim
 
 //Insert code here to read the arguments of the CV here using plumed's parsing functionality.  N.B.  The label is read in already elsewhere.
@@ -83,6 +100,7 @@ PLUMED_COLVAR_INIT(ao)
 //--- The following two lines inform the plumed core that we require space to store the value
     // of the CV and that the CV will act on a particular list of atoms.
   addValueWithDerivatives();
+  vector<AtomNumber> atoms;
   setNotPeriodic();
   requestAtoms(atoms);
    
@@ -144,20 +162,4 @@ Please only use this functionality for CVs that are VERY similar.
 
 }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
