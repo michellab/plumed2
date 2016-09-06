@@ -37,6 +37,9 @@ class Brahan : public Colvar {
 	double param;
 private:
  vector<AtomNumber> reactant_atoms;//list of reactant atoms used for CV
+ vector<AtomNumber> product_atoms;//list of product atoms used for CV
+ vector<AtomNumber> ts_atoms;//list of ts atoms used for CV
+ vector<AtomNumber> binding_atoms;//list of ts atoms used for CV
 
 
 public:
@@ -65,10 +68,12 @@ void Brahan::registerKeywords( Keywords& keys ){
 //\endverbatim
   keys.add("compulsory", "PARAM", "the value of input");
   keys.add("compulsory", "REACTANT", "the pdb of reactant");
+  keys.add("compulsory", "PRODUCT", "the pdb of product");
+  keys.add("compulsory", "TS", "the pdb of transition state");
+  keys.add("compulsory", "BINDING", "the pdb of binding site");
 //In here you should add all your descriptions of the keywords used by your colvar as well as descriptions of any components
 //that you can use this colvar to calculate. Descriptions as to how to do this can be found here: \ref usingDoxygen
 
-//\verbatim
 }
 
  //---- We now write the actual readin (constructor) and calculations routines for the colvar
@@ -81,6 +86,12 @@ PLUMED_COLVAR_INIT(ao)
   parse("PARAM",param);
   string reactant_file;
   parse("REACTANT",reactant_file);
+  string product_file;
+  parse("PRODUCT",product_file);
+  string ts_file;
+  parse("TS",ts_file);
+  string binding_file;
+  parse("BINDING",binding_file);
   
   PDB reactant_pdb;
   if( !reactant_pdb.read(reactant_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
@@ -91,8 +102,38 @@ PLUMED_COLVAR_INIT(ao)
   const std::vector<double> reactant_masses = reactant_pdb.getOccupancy();
   cout << " Reactant has ? elements " << reactant_atoms.size() << endl; 
  // cout << " reactant_positions[0][0] " << reactant_positions[0][0] << endl; 
-//\endverbatim
+  cout << " index [0] " << reactant_atoms[0].index() << endl;
+  cout << " index [1] " << reactant_atoms[1].index() << endl;
+  cout << " index [2] " << reactant_atoms[2].index() << endl;
 
+  PDB product_pdb;
+  if( !product_pdb.read(product_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
+    error("missing input file " + product_file );
+
+  product_atoms = product_pdb.getAtomNumbers();
+  const std::vector<Vector> product_positions = product_pdb.getPositions();
+  const std::vector<double> product_masses = product_pdb.getOccupancy();
+  cout << " Product has ? elements " << product_atoms.size() << endl;
+
+
+  PDB ts_pdb;
+  if( !ts_pdb.read(ts_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
+    error("missing input file " + ts_file );
+
+  ts_atoms = ts_pdb.getAtomNumbers();
+  const std::vector<Vector> ts_positions = ts_pdb.getPositions();
+  const std::vector<double> ts_masses = ts_pdb.getOccupancy();
+  cout << " Transition state has ? elements " << ts_atoms.size() << endl;
+
+
+  PDB binding_pdb;
+  if( !binding_pdb.read(binding_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
+    error("missing input file " + binding_file );
+
+  binding_atoms = binding_pdb.getAtomNumbers();
+  const std::vector<Vector> binding_positions = binding_pdb.getPositions();
+  const std::vector<double> binding_masses = binding_pdb.getOccupancy();
+  cout << " Binding state has ? elements " << binding_atoms.size() << endl;
 //Insert code here to read the arguments of the CV here using plumed's parsing functionality.  N.B.  The label is read in already elsewhere.
 
 //\verbatim
@@ -100,9 +141,21 @@ PLUMED_COLVAR_INIT(ao)
 //--- The following two lines inform the plumed core that we require space to store the value
     // of the CV and that the CV will act on a particular list of atoms.
   addValueWithDerivatives();
-  vector<AtomNumber> atoms;
   setNotPeriodic();
-  requestAtoms(atoms);
+
+  vector<AtomNumber> all_atoms( reactant_atoms.size() + binding_atoms.size() );
+   
+  for ( unsigned i = 0; i < reactant_atoms.size(); ++i )
+    all_atoms[i] = reactant_atoms[i];
+
+  
+  for ( unsigned i = 0; i < binding_atoms.size(); ++i )
+    all_atoms[reactant_atoms.size()+i] = binding_atoms[i];
+
+
+
+
+  requestAtoms(all_atoms);
    
 /*--- For a number of the free energy methods in plumed it is necessary to calculate the
       distance between two points in CV space.  Obviously, for periodic CVs one must take
@@ -112,17 +165,15 @@ PLUMED_COLVAR_INIT(ao)
 */  
  //getValue("")->setPeridodicity(true);  // Set this true if the CV is periodic otherwise set if false.
   // getValue("")->setDomain(min,max);     // This routine is only required if the function is periodic.  It sets the minimum and maximum values of the colvar.
-  cout << "  Calling Brahan _constructor "<< endl;
   cout << "PARAM " << param << endl;
   log.printf(" PARAM %f \n" , param);
 }
 
 void Brahan::calculate(){
 //--- These are the things you must calculate for any cv ---/
-  double sumparam;              //--- The value of the cv ----/
+  double brahan_val=0.0;           //--- The value of the cv ----/
  // Tensor boxDerivatives;      /--- The derivative of the cv with respect to the box vectors ----/
  // vector<double> derivatives; /--- The derivative of the cv with respect to the atom positions ---/
-//\endverbatim
 
 //Insert the code to calculate your cv, its derivatives and its contribution to the virial here. Please use, where possible, the library of tools described in \ref TOOLBOX.
 
@@ -132,10 +183,19 @@ void Brahan::calculate(){
   //for(int i=0;i<derivatives.size();i++){ setAtomsDerivatives(i,derivatives[i]); }
   //setBoxDerivatives(boxDerivatives);
   //setValue(param);
-  sumparam = param + 10.0;
-  setValue(sumparam);
-  //cout << "  Calling Brahan "<< endl;
-//  cout << "SUMPARAM " << sumparam << endl;
+  cout << "Beginning  Brahan calculation "<< endl;
+  cout << ".............................. "<< endl;
+  unsigned n_reactantatoms = reactant_atoms.size();
+  unsigned n_bindingatoms = binding_atoms.size();
+  unsigned n_allatoms = n_reactantatoms + n_bindingatoms;
+  for (unsigned j =0; j < n_allatoms ; ++j)
+    {
+      double j_mass = getMass(j);     
+      Vector j_pos = getPosition(j);
+      cout << j_pos[0] << endl;    
+    }
+  
+  setValue(brahan_val);
 }
 //\endverbatim
 
