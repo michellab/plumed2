@@ -9,6 +9,7 @@ If you use the following template for this file then the manual and the calls to
 #include "ActionRegister.h"
 #include "core/PlumedMain.h"
 #include "tools/PDB.h"
+#include "kabsch.h" // Kabsch algorithm implementation
 
 
 #include <string>
@@ -40,7 +41,8 @@ private:
  vector<AtomNumber> product_atoms;//list of product atoms used for CV
  vector<AtomNumber> ts_atoms;//list of ts atoms used for CV
  vector<AtomNumber> binding_atoms;//list of ts atoms used for CV
-
+ vector<Vector> refreactant_pos;// reference coordinates Reactant for alignment
+ double refreactant_com[3]; // reference coordinates of the center of mass of the Reactant
 
 public:
  //---- This routine is used to create the descriptions of all the keywords used by your CV
@@ -102,9 +104,7 @@ PLUMED_COLVAR_INIT(ao)
   const std::vector<double> reactant_masses = reactant_pdb.getOccupancy();
   cout << " Reactant has ? elements " << reactant_atoms.size() << endl; 
  // cout << " reactant_positions[0][0] " << reactant_positions[0][0] << endl; 
-  cout << " index [0] " << reactant_atoms[0].index() << endl;
-  cout << " index [1] " << reactant_atoms[1].index() << endl;
-  cout << " index [2] " << reactant_atoms[2].index() << endl;
+  //cout << " index [0] " << reactant_atoms[0].index() << endl;
 
   PDB product_pdb;
   if( !product_pdb.read(product_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
@@ -142,7 +142,31 @@ PLUMED_COLVAR_INIT(ao)
     // of the CV and that the CV will act on a particular list of atoms.
   addValueWithDerivatives();
   setNotPeriodic();
+// calculate the center of mass of substrate reference file
+  double sub_mass_tot = 0.0;
+  refreactant_com[0] =0.0;
+  refreactant_com[1] =0.0;
+  refreactant_com[2] =0.0;
+  for (unsigned i=0; i< reactant_atoms.size() ; ++i)
+    {
+      refreactant_com[0] += reactant_masses[i] * reactant_positions[i][0];
+      refreactant_com[1] += reactant_masses[i] * reactant_positions[i][1];
+      refreactant_com[2] += reactant_masses[i] * reactant_positions[i][2];
+  refreactant_pos.push_back( Vector(reactant_positions[i][0], reactant_positions[i][1], reactant_positions[i][2]) );
 
+      sub_mass_tot += reactant_masses[i];
+    }
+
+  refreactant_com[0] /= sub_mass_tot;
+  refreactant_com[1] /= sub_mass_tot;
+  refreactant_com[2] /= sub_mass_tot;
+
+  cout << " refreactant_com " << refreactant_com[0] << " " << refreactant_com[1] << " " << refreactant_com[2] << endl;
+
+
+
+
+// all_atoms vector = substrate + binding site
   vector<AtomNumber> all_atoms( reactant_atoms.size() + binding_atoms.size() );
    
   for ( unsigned i = 0; i < reactant_atoms.size(); ++i )
@@ -171,7 +195,21 @@ PLUMED_COLVAR_INIT(ao)
 
 void Brahan::calculate(){
 //--- These are the things you must calculate for any cv ---/
-  double brahan_val=0.0;           //--- The value of the cv ----/
+  double brahan_val=0.0;
+  
+  vector<double> R_x; // array with update of x coordinates of each reference substate Reactant according to translation/rotation
+  R_x.reserve(reactant_atoms.size());
+
+  vector<double> R_y; // array with update of y coordinates of each reference substate Reactant according to translation/rotation
+  R_y.reserve(reactant_atoms.size());
+
+  vector<double> R_z; // array with update of z coordinates of each reference substate Reactant according to translation/rotation
+  R_z.reserve(reactant_atoms.size());
+
+
+
+
+
  // Tensor boxDerivatives;      /--- The derivative of the cv with respect to the box vectors ----/
  // vector<double> derivatives; /--- The derivative of the cv with respect to the atom positions ---/
 
@@ -186,15 +224,102 @@ void Brahan::calculate(){
   cout << "Beginning  Brahan calculation "<< endl;
   cout << ".............................. "<< endl;
   unsigned n_reactantatoms = reactant_atoms.size();
-  unsigned n_bindingatoms = binding_atoms.size();
-  unsigned n_allatoms = n_reactantatoms + n_bindingatoms;
-  for (unsigned j =0; j < n_allatoms ; ++j)
+//  unsigned n_bindingatoms = binding_atoms.size();
+  double sub_com[3] = {0.0, 0.0 ,0.0};
+  double sub_mass=0.0;
+
+// calculate new center of mass of substate
+  for (unsigned j =0; j < n_reactantatoms ; ++j)
     {
       double j_mass = getMass(j);     
       Vector j_pos = getPosition(j);
-      cout << j_pos[0] << endl;    
+      sub_com[0] += j_mass * j_pos[0];
+      sub_com[1] += j_mass * j_pos[1];
+      sub_com[2] += j_mass * j_pos[2];
+      sub_mass += j_mass;
     }
+  sub_com[0] /= sub_mass;
+  sub_com[1] /= sub_mass;
+  sub_com[2] /= sub_mass;
+  cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
+
+  double ref_xlist[n_reactantatoms][3]; // coordinate of referece substrate reactant
+  double mov_xlist[n_reactantatoms][3]; // new coordinate of substate
+  double mov_com[3] = {0.0,0.0,0.0}; // new center of mass of substrate
+  double mov_to_ref[3]; // vector between the com of move and ref substate
+  double rotmat[3][3]; //the rotation matrix for least-squares fit
+  double rmsd = 0.0;
+
+  double mov_mass_tot=0.0;
+
+  for (unsigned i=0; i < n_reactantatoms ; ++i)
+    {
+      ref_xlist[i][0] = refreactant_pos[i][0];
+      ref_xlist[i][1] = refreactant_pos[i][1];
+      ref_xlist[i][2] = refreactant_pos[i][2];
+      Vector i_pos = getPosition( i );
+      mov_xlist[i][0] = i_pos[0];
+      mov_xlist[i][1] = i_pos[1];
+      mov_xlist[i][2] = i_pos[2];
+      double i_mass = getMass( i );
+      mov_mass_tot += i_mass;
+      mov_com[0] += i_mass * i_pos[0];
+      mov_com[1] += i_mass * i_pos[1];
+      mov_com[2] += i_mass * i_pos[2];
+    }
+  // Set mov_com and mov_to_ref
+  mov_com[0] /= mov_mass_tot;
+  mov_com[1] /= mov_mass_tot;
+  mov_com[2] /= mov_mass_tot;
+
+  mov_to_ref[0] = refreactant_com[0] - mov_com[0];
+  mov_to_ref[1] = refreactant_com[1] - mov_com[1];
+  mov_to_ref[2] = refreactant_com[2] - mov_com[2];
+
+  rotmat[0][0] = 1.0;
+  rotmat[0][1] = 0.0;
+  rotmat[0][2] = 0.0;
+  rotmat[1][0] = 0.0;
+  rotmat[1][1] = 1.0;
+  rotmat[1][2] = 0.0;
+  rotmat[2][0] = 0.0;
+  rotmat[2][1] = 0.0;
+  rotmat[2][2] = 1.0;
+
+  calculate_rotation_rmsd( ref_xlist, mov_xlist, n_reactantatoms, mov_com, mov_to_ref, rotmat, &rmsd  );
+
+  cout << "Just called calculated_rotation_rmsd" << endl;
+  cout << "rotmat elements  of substate :" << endl;
+  cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
+  cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
+  cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
+  cout << "rmsd " << rmsd << endl;
+
+// translate Reactant_ref using new com of mov_substate
+  double new_refR_com_x;
+  double new_refR_com_y;
+  double new_refR_com_z;
+  new_refR_com_x = sub_com[0];
+  new_refR_com_y = sub_com[1];
+  new_refR_com_z = sub_com[2];
+
+ // cout << " New reference R " << new_refR_com_x << " " << new_refR_com_y << " " << new_refR_com_z << endl;
+
+  // Now rotate the reference Reactant position at origin and then translate to new com
+
+  for(unsigned i=0;i< n_reactantatoms;i++)
+    {
+      R_x[i]  = ( rotmat[0][0]*(refreactant_pos[i][0]) + rotmat[1][0]*(refreactant_pos[i][1]) + rotmat[2][0]*(refreactant_pos[i][2]) ) + new_refR_com_x;
+      R_y[i]  = ( rotmat[0][1]*(refreactant_pos[i][0]) + rotmat[1][1]*(refreactant_pos[i][1]) + rotmat[2][1]*(refreactant_pos[i][2]) ) + new_refR_com_y;
+      R_z[i]  = ( rotmat[0][2]*(refreactant_pos[i][0]) + rotmat[1][2]*(refreactant_pos[i][1]) + rotmat[2][2]*(refreactant_pos[i][2]) ) + new_refR_com_z;
+      cout << "new reference R coordinate of atom " << i << " "  << R_x[i] << " " << R_y[i] << " " << R_z[i] << endl;
+
+     }
   
+ 
+
+
+
   setValue(brahan_val);
 }
 //\endverbatim
