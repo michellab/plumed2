@@ -16,7 +16,10 @@ If you use the following template for this file then the manual and the calls to
 #include <cmath>
 #include <cassert>
 #include <vector>
-
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
 using namespace std;
 
 namespace PLMD{
@@ -42,7 +45,11 @@ private:
  vector<AtomNumber> ts_atoms;//list of ts atoms used for CV
  vector<AtomNumber> binding_atoms;//list of ts atoms used for CV
  vector<Vector> refreactant_pos;// reference coordinates Reactant for alignment
+ vector<Vector> refproduct_pos;// reference coordinates Reactant for alignment
+ vector<Vector> refts_pos;// reference coordinates Reactant for alignment
  double refreactant_com[3]; // reference coordinates of the center of mass of the Reactant
+ double refproduct_com[3]; // reference coordinates of the center of mass of the Reactant
+ double refts_com[3]; // reference coordinates of the center of mass of the Reactant
 
 public:
  //---- This routine is used to create the descriptions of all the keywords used by your CV
@@ -147,14 +154,38 @@ PLUMED_COLVAR_INIT(ao)
   refreactant_com[0] =0.0;
   refreactant_com[1] =0.0;
   refreactant_com[2] =0.0;
+  double subp_mass_tot = 0.0;
+  refproduct_com[0] =0.0;
+  refproduct_com[1] =0.0;
+  refproduct_com[2] =0.0;
+  double subts_mass_tot = 0.0;
+  refts_com[0] =0.0;
+  refts_com[1] =0.0;
+  refts_com[2] =0.0;
+
   for (unsigned i=0; i< reactant_atoms.size() ; ++i)
     {
       refreactant_com[0] += reactant_masses[i] * reactant_positions[i][0];
       refreactant_com[1] += reactant_masses[i] * reactant_positions[i][1];
       refreactant_com[2] += reactant_masses[i] * reactant_positions[i][2];
-  refreactant_pos.push_back( Vector(reactant_positions[i][0], reactant_positions[i][1], reactant_positions[i][2]) );
+      refreactant_pos.push_back( Vector(reactant_positions[i][0], reactant_positions[i][1], reactant_positions[i][2]) );
 
       sub_mass_tot += reactant_masses[i];
+     
+      refproduct_com[0] += product_masses[i] * product_positions[i][0];
+      refproduct_com[1] += product_masses[i] * product_positions[i][1];
+      refproduct_com[2] += product_masses[i] * product_positions[i][2];
+      refproduct_pos.push_back( Vector(product_positions[i][0], product_positions[i][1], product_positions[i][2]) );
+
+      subp_mass_tot += product_masses[i];
+     
+      refts_com[0] += ts_masses[i] * ts_positions[i][0];
+      refts_com[1] += ts_masses[i] * ts_positions[i][1];
+      refts_com[2] += ts_masses[i] * ts_positions[i][2];
+      refts_pos.push_back( Vector(ts_positions[i][0], ts_positions[i][1], ts_positions[i][2]) );
+
+      subts_mass_tot += ts_masses[i];
+
     }
 
   refreactant_com[0] /= sub_mass_tot;
@@ -162,6 +193,19 @@ PLUMED_COLVAR_INIT(ao)
   refreactant_com[2] /= sub_mass_tot;
 
   cout << " refreactant_com " << refreactant_com[0] << " " << refreactant_com[1] << " " << refreactant_com[2] << endl;
+
+  refproduct_com[0] /= subp_mass_tot;
+  refproduct_com[1] /= subp_mass_tot;
+  refproduct_com[2] /= subp_mass_tot;
+
+  cout << " refproduct_com " << refproduct_com[0] << " " << refproduct_com[1] << " " << refproduct_com[2] << endl;
+
+
+  refts_com[0] /= subts_mass_tot;
+  refts_com[1] /= subts_mass_tot;
+  refts_com[2] /= subts_mass_tot;
+
+  cout << " refts_com " << refts_com[0] << " " << refts_com[1] << " " << refts_com[2] << endl;
 
 
 
@@ -197,14 +241,6 @@ void Brahan::calculate(){
 //--- These are the things you must calculate for any cv ---/
   double brahan_val=0.0;
   
-  vector<double> R_x; // array with update of x coordinates of each reference substate Reactant according to translation/rotation
-  R_x.reserve(reactant_atoms.size());
-
-  vector<double> R_y; // array with update of y coordinates of each reference substate Reactant according to translation/rotation
-  R_y.reserve(reactant_atoms.size());
-
-  vector<double> R_z; // array with update of z coordinates of each reference substate Reactant according to translation/rotation
-  R_z.reserve(reactant_atoms.size());
 
 
 
@@ -243,20 +279,37 @@ void Brahan::calculate(){
   sub_com[2] /= sub_mass;
   cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
 
-  double ref_xlist[n_reactantatoms][3]; // coordinate of referece substrate reactant
+  double refR_xlist[n_reactantatoms][3]; // coordinate of referece substrate reactant
+  double refP_xlist[n_reactantatoms][3]; // coordinate of referece substrate product
+  double refTS_xlist[n_reactantatoms][3]; // coordinate of referece substrate ts
   double mov_xlist[n_reactantatoms][3]; // new coordinate of substate
   double mov_com[3] = {0.0,0.0,0.0}; // new center of mass of substrate
-  double mov_to_ref[3]; // vector between the com of move and ref substate
-  double rotmat[3][3]; //the rotation matrix for least-squares fit
-  double rmsd = 0.0;
+  double movR_to_ref[3]; // vector between the com of move and ref reactant substate
+  double movP_to_ref[3]; // vector between the com of move and ref product substate
+  double movTS_to_ref[3]; // vector between the com of move and ref ts substate
+  double rotmatR[3][3]; //the rotation matrix for least-squares fit
+  double rotmatP[3][3]; //the rotation matrix for least-squares fit
+  double rotmatTS[3][3]; //the rotation matrix for least-squares fit
+  double rmsdR = 0.0;
+  double rmsdP = 0.0;
+  double rmsdTS = 0.0;
 
   double mov_mass_tot=0.0;
 
   for (unsigned i=0; i < n_reactantatoms ; ++i)
     {
-      ref_xlist[i][0] = refreactant_pos[i][0];
-      ref_xlist[i][1] = refreactant_pos[i][1];
-      ref_xlist[i][2] = refreactant_pos[i][2];
+      refR_xlist[i][0] = refreactant_pos[i][0];
+      refR_xlist[i][1] = refreactant_pos[i][1];
+      refR_xlist[i][2] = refreactant_pos[i][2];
+
+      refP_xlist[i][0] = refproduct_pos[i][0];
+      refP_xlist[i][1] = refproduct_pos[i][1];
+      refP_xlist[i][2] = refproduct_pos[i][2];
+
+      refTS_xlist[i][0] = refts_pos[i][0];
+      refTS_xlist[i][1] = refts_pos[i][1];
+      refTS_xlist[i][2] = refts_pos[i][2];
+
       Vector i_pos = getPosition( i );
       mov_xlist[i][0] = i_pos[0];
       mov_xlist[i][1] = i_pos[1];
@@ -272,52 +325,127 @@ void Brahan::calculate(){
   mov_com[1] /= mov_mass_tot;
   mov_com[2] /= mov_mass_tot;
 
-  mov_to_ref[0] = refreactant_com[0] - mov_com[0];
-  mov_to_ref[1] = refreactant_com[1] - mov_com[1];
-  mov_to_ref[2] = refreactant_com[2] - mov_com[2];
+  movR_to_ref[0] = refreactant_com[0] - mov_com[0];
+  movR_to_ref[1] = refreactant_com[1] - mov_com[1];
+  movR_to_ref[2] = refreactant_com[2] - mov_com[2];
 
-  rotmat[0][0] = 1.0;
-  rotmat[0][1] = 0.0;
-  rotmat[0][2] = 0.0;
-  rotmat[1][0] = 0.0;
-  rotmat[1][1] = 1.0;
-  rotmat[1][2] = 0.0;
-  rotmat[2][0] = 0.0;
-  rotmat[2][1] = 0.0;
-  rotmat[2][2] = 1.0;
+  movP_to_ref[0] = refproduct_com[0] - mov_com[0];
+  movP_to_ref[1] = refproduct_com[1] - mov_com[1];
+  movP_to_ref[2] = refproduct_com[2] - mov_com[2];
 
-  calculate_rotation_rmsd( ref_xlist, mov_xlist, n_reactantatoms, mov_com, mov_to_ref, rotmat, &rmsd  );
+  movTS_to_ref[0] = refts_com[0] - mov_com[0];
+  movTS_to_ref[1] = refts_com[1] - mov_com[1];
+  movTS_to_ref[2] = refts_com[2] - mov_com[2];
+
+  // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
+  ofstream wfile000;
+  wfile000.open("mov-xlist-bef.xyz");
+  int n_align = reactant_atoms.size();
+  wfile000 << n_align << endl;
+  wfile000 << "comment" << endl;
+  for (int i=0; i < n_align; i++)
+    {
+      wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+    }
+  wfile000.close();
+
+
+  rotmatR[0][0] = 1.0;
+  rotmatR[0][1] = 0.0;
+  rotmatR[0][2] = 0.0;
+  rotmatR[1][0] = 0.0;
+  rotmatR[1][1] = 1.0;
+  rotmatR[1][2] = 0.0;
+  rotmatR[2][0] = 0.0;
+  rotmatR[2][1] = 0.0;
+  rotmatR[2][2] = 1.0;
+
+  rotmatP[0][0] = 1.0;
+  rotmatP[0][1] = 0.0;
+  rotmatP[0][2] = 0.0;
+  rotmatP[1][0] = 0.0;
+  rotmatP[1][1] = 1.0;
+  rotmatP[1][2] = 0.0;
+  rotmatP[2][0] = 0.0;
+  rotmatP[2][1] = 0.0;
+  rotmatP[2][2] = 1.0;
+
+  rotmatTS[0][0] = 1.0;
+  rotmatTS[0][1] = 0.0;
+  rotmatTS[0][2] = 0.0;
+  rotmatTS[1][0] = 0.0;
+  rotmatTS[1][1] = 1.0;
+  rotmatTS[1][2] = 0.0;
+  rotmatTS[2][0] = 0.0;
+  rotmatTS[2][1] = 0.0;
+  rotmatTS[2][2] = 1.0;
+
+  calculate_rotation_rmsd( refR_xlist, mov_xlist, n_reactantatoms, mov_com, movR_to_ref, rotmatR, &rmsdR  );
+  calculate_rotation_rmsd( refP_xlist, mov_xlist, n_reactantatoms, mov_com, movP_to_ref, rotmatP, &rmsdP  );
+  calculate_rotation_rmsd( refTS_xlist, mov_xlist, n_reactantatoms, mov_com, movTS_to_ref, rotmatTS, &rmsdTS  );
+
+  ofstream wfile001;
+  wfile001.open("mov-xlist.xyz");
+  wfile001 << n_align << endl;
+  wfile001 << "comment" << endl;
+  for (int i=0; i < n_align; i++)
+    {
+      wfile001<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+    }
+  wfile001.close();
+
+  ofstream wfile002;
+  wfile002.open("refreactant-xlist.xyz");
+  wfile002 << n_align << endl;
+  wfile002 << "comment" << endl;
+  for (int i=0; i < n_align; i++)
+    {
+      wfile002<< "C " << std::fixed << std::setprecision(5) << refR_xlist[i][0]*10 << " " << refR_xlist[i][1]*10 << " " << refR_xlist[i][2]*10 << endl;
+    }
+  wfile002.close();
+
+  ofstream wfile003;
+  wfile003.open("refproduct-xlist.xyz");
+  wfile003 << n_align << endl;
+  wfile003 << "comment" << endl;
+  for (int i=0; i < n_align; i++)
+    {
+      wfile003<< "C " << std::fixed << std::setprecision(5) << refP_xlist[i][0]*10 << " " << refP_xlist[i][1]*10 << " " << refP_xlist[i][2]*10 << endl;
+    }
+  wfile003.close();
+
+  ofstream wfile004;
+  wfile004.open("refts-xlist.xyz");
+  wfile004 << n_align << endl;
+  wfile004 << "comment" << endl;
+  for (int i=0; i < n_align; i++)
+    {
+      wfile004<< "C " << std::fixed << std::setprecision(5) << refTS_xlist[i][0]*10 << " " << refTS_xlist[i][1]*10 << " " << refTS_xlist[i][2]*10 << endl;
+    }
+  wfile004.close();
+
+
 
   cout << "Just called calculated_rotation_rmsd" << endl;
-  cout << "rotmat elements  of substate :" << endl;
-  cout << rotmat[0][0] << " " << rotmat[0][1] << " " << rotmat[0][2] << endl;
-  cout << rotmat[1][0] << " " << rotmat[1][1] << " " << rotmat[1][2] << endl;
-  cout << rotmat[2][0] << " " << rotmat[2][1] << " " << rotmat[2][2] << endl; 
-  cout << "rmsd " << rmsd << endl;
+  cout << "rotmat elements  of reactant reference :" << endl;
+  cout << rotmatR[0][0] << " " << rotmatR[0][1] << " " << rotmatR[0][2] << endl;
+  cout << rotmatR[1][0] << " " << rotmatR[1][1] << " " << rotmatR[1][2] << endl;
+  cout << rotmatR[2][0] << " " << rotmatR[2][1] << " " << rotmatR[2][2] << endl; 
+  cout << "rmsd " << rmsdR << endl;
 
-// translate Reactant_ref using new com of mov_substate
-  double new_refR_com_x;
-  double new_refR_com_y;
-  double new_refR_com_z;
-  new_refR_com_x = sub_com[0];
-  new_refR_com_y = sub_com[1];
-  new_refR_com_z = sub_com[2];
+  cout << "Just called calculated_rotation_rmsd" << endl;
+  cout << "rotmat elements  of product reference :" << endl;
+  cout << rotmatP[0][0] << " " << rotmatP[0][1] << " " << rotmatP[0][2] << endl;
+  cout << rotmatP[1][0] << " " << rotmatP[1][1] << " " << rotmatP[1][2] << endl;
+  cout << rotmatP[2][0] << " " << rotmatP[2][1] << " " << rotmatP[2][2] << endl; 
+  cout << "rmsd " << rmsdP << endl;
 
- // cout << " New reference R " << new_refR_com_x << " " << new_refR_com_y << " " << new_refR_com_z << endl;
-
-  // Now rotate the reference Reactant position at origin and then translate to new com
-
-  for(unsigned i=0;i< n_reactantatoms;i++)
-    {
-      R_x[i]  = ( rotmat[0][0]*(refreactant_pos[i][0]) + rotmat[1][0]*(refreactant_pos[i][1]) + rotmat[2][0]*(refreactant_pos[i][2]) ) + new_refR_com_x;
-      R_y[i]  = ( rotmat[0][1]*(refreactant_pos[i][0]) + rotmat[1][1]*(refreactant_pos[i][1]) + rotmat[2][1]*(refreactant_pos[i][2]) ) + new_refR_com_y;
-      R_z[i]  = ( rotmat[0][2]*(refreactant_pos[i][0]) + rotmat[1][2]*(refreactant_pos[i][1]) + rotmat[2][2]*(refreactant_pos[i][2]) ) + new_refR_com_z;
-      cout << "new reference R coordinate of atom " << i << " "  << R_x[i] << " " << R_y[i] << " " << R_z[i] << endl;
-
-     }
-  
- 
-
+  cout << "Just called calculated_rotation_rmsd" << endl;
+  cout << "rotmat elements  of ts reference :" << endl;
+  cout << rotmatTS[0][0] << " " << rotmatTS[0][1] << " " << rotmatTS[0][2] << endl;
+  cout << rotmatTS[1][0] << " " << rotmatTS[1][1] << " " << rotmatTS[1][2] << endl;
+  cout << rotmatTS[2][0] << " " << rotmatTS[2][1] << " " << rotmatTS[2][2] << endl; 
+  cout << "rmsd " << rmsdTS << endl;
 
 
   setValue(brahan_val);
