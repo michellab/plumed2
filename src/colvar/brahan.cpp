@@ -11,7 +11,6 @@ If you use the following template for this file then the manual and the calls to
 #include "tools/PDB.h"
 #include "kabsch.h" // Kabsch algorithm implementation
 
-
 #include <string>
 #include <cmath>
 #include <cassert>
@@ -447,7 +446,68 @@ void Brahan::calculate(){
   cout << rotmatTS[2][0] << " " << rotmatTS[2][1] << " " << rotmatTS[2][2] << endl; 
   cout << "rmsd " << rmsdTS << endl;
 
+// calculate energy
+  double Coulomb_R = 0.0; // the Coulombic energy of reactant with binding site
+  double Coulomb_P = 0.0; // the Coulombic energy of product with binding site
+  double Coulomb_TS = 0.0; // the Coulombic energy of transition state with binding site
+//  double LJ_R = 0.0; // the LJ energy of reactant with binding site
+//  double LJ_P = 0.0; // the LJ energy of product with binding site
+//  double LJ_TS = 0.0; // the LJ energy of transition state with binding site
+  double Ke = 8.98755e9;
+  double qi = 0.0;
+  double qj = 0.0;
+  unsigned n_bindingatoms = binding_atoms.size();
+  /// loop over binding site atom
+  for (unsigned i= n_reactantatoms; i < n_reactantatoms+n_bindingatoms; ++i)
+    {
+     ///loop over reactant atom
+     for (unsigned j=0; j < n_reactantatoms; ++j )
+       { 
+                 
+         Vector binding_pos = getPosition(i); // coordinate of binding site atom i
 
+         // calculate distance atom i and j (magnitude of Rij)
+         double Rx = binding_pos[0] - refR_xlist[j][0] ;
+         double Ry = binding_pos[1] - refR_xlist[j][1] ;
+         double Rz = binding_pos[2] - refR_xlist[j][2] ;
+         double distR = sqrt(Rx*Rx + Ry*Ry + Rz*Rz) ;
+         // distance atom ref product and binding site
+         double Px = binding_pos[0] - refP_xlist[j][0] ;
+         double Py = binding_pos[1] - refP_xlist[j][1] ;
+         double Pz = binding_pos[2] - refP_xlist[j][2] ;
+         double distP = sqrt(Px*Px + Py*Py + Pz*Pz) ;
+       //  cout << "Px " << Px << "Py " << Py << "Pz " << Pz << "dist "<< distP << endl;
+         // distance atom ref ts and binding site
+         double TSx = binding_pos[0] - refTS_xlist[j][0] ;
+         double TSy = binding_pos[1] - refTS_xlist[j][1] ;
+         double TSz = binding_pos[2] - refTS_xlist[j][2] ;
+         double distTS = sqrt(TSx*TSx + TSy*TSy + TSz*TSz) ;
+      //   cout << "TSx " << TSx << "TSy " << TSy << "TSz " << TSz << "dist "<< distTS << endl;
+         qi = getCharge(i);
+         qj = getCharge(j);
+     // Coulomb_R += ((Ke*qi*qj)/distR) ; // the Coulombic energy of reactant with binding site
+     
+         Coulomb_P += ((Ke*qi*qj)/distP) ; // the Coulombic energy of product with binding site
+     
+         Coulomb_TS += ((Ke*qi*qj)/distTS) ; // the Coulombic energy of TS with binding site
+        
+         Coulomb_R += ((Ke*qi*qj)/distR) ; // the Coulombic energy of reactant with binding site
+         cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
+         // calculate the Lennard Jones energy
+         // V(LJ) = C12/(Rij)^12 - C6/(Rij)^6
+        // string name = getNameAtomFromResidueAndChain( reactant_atoms,i);
+        //  string name = getAtomName( reactant_atoms, i);
+   //      cout << "name " << name << endl;                
+
+
+
+
+       }
+    }
+
+    cout << "CoulombR " << Coulomb_R << endl;
+    cout << "CoulombP " << Coulomb_P << endl;
+    cout << "CoulombTS " << Coulomb_TS << endl;
   setValue(brahan_val);
 }
 //\endverbatim
