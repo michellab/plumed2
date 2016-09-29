@@ -51,10 +51,14 @@ public:
   vector<double> TS_epsilon;// sigma LJ parameter for Product
   vector<double> bindSite_sigma;// sigma LJ parameter for binding site
   vector<double> bindSite_epsilon;// epsilon LJ parameter for binding site
-  vector<double> R_charge;
+  vector<double> R_charge; //charge of reactant
   vector<double> P_charge;
   vector<double> TS_charge;
   vector<double> bindSite_charge;
+  vector<string> R_atomName;// atom name of reactant
+  vector<string> P_atomName;
+  vector<string> TS_atomName;
+  vector<string> bindSite_atomName;
 
 };
 
@@ -90,6 +94,7 @@ void parameter::readParamFile(string &bindingParam_file, string &RParam_file, st
            bindSite_sigma.push_back( atof(tokens[3].c_str()) );
            bindSite_epsilon.push_back( atof(tokens[4].c_str()) );
            bindSite_charge.push_back( atof(tokens[5].c_str()) );
+           bindSite_atomName.push_back( tokens[1] );
            //cout << tokens[0] << endl;
          }
          else if (i==1)
@@ -97,13 +102,15 @@ void parameter::readParamFile(string &bindingParam_file, string &RParam_file, st
            R_sigma.push_back( atof(tokens[3].c_str()) );
            R_epsilon.push_back( atof(tokens[4].c_str()) );
            R_charge.push_back( atof(tokens[5].c_str()) );
-           //cout << tokens[0] << endl;
+           R_atomName.push_back( tokens[1] );
+           //cout << tokens[0] << endal;
          }
          else if (i==2)
          { 
            P_sigma.push_back( atof(tokens[3].c_str()) );
            P_epsilon.push_back( atof(tokens[4].c_str()) );
            P_charge.push_back( atof(tokens[5].c_str()) );
+           P_atomName.push_back( tokens[1] );
            //cout << tokens[0] << endl;
          }
          else if (i==3)
@@ -111,6 +118,7 @@ void parameter::readParamFile(string &bindingParam_file, string &RParam_file, st
            TS_sigma.push_back( atof(tokens[3].c_str()) );
            TS_epsilon.push_back( atof(tokens[4].c_str()) );
            TS_charge.push_back( atof(tokens[5].c_str()) );
+           TS_atomName.push_back( tokens[1] );
            //cout << tokens[0] << endl;
          }
        }
@@ -452,7 +460,8 @@ void Brahan::calculate(){
   wfile000 << "comment" << endl;
   for (int i=0; i < n_align; i++)
     {
-      wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+      wfile000<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+      //wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
     }
   wfile000.close();
 
@@ -490,14 +499,20 @@ void Brahan::calculate(){
   calculate_rotation_rmsd( refR_xlist, mov_xlist, n_reactantatoms, mov_com, movR_to_ref, rotmatR, &rmsdR  );
   calculate_rotation_rmsd( refP_xlist, mov_xlist, n_reactantatoms, mov_com, movP_to_ref, rotmatP, &rmsdP  );
   calculate_rotation_rmsd( refTS_xlist, mov_xlist, n_reactantatoms, mov_com, movTS_to_ref, rotmatTS, &rmsdTS  );
-
+  
+  string  xyzfile = "mov-xlist.xyz";
+  ostringstream convertstep;
+  convertstep << step;
+  string xyzstep;
+  xyzstep = convertstep.str() + xyzfile;
+  // cout << xyzstep << endl;
   ofstream wfile001;
-  wfile001.open("mov-xlist.xyz");
+  wfile001.open(xyzstep.c_str());
   wfile001 << n_align << endl;
   wfile001 << "comment" << endl;
   for (int i=0; i < n_align; i++)
     {
-      wfile001<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+      wfile001<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
     }
   wfile001.close();
 
@@ -507,7 +522,7 @@ void Brahan::calculate(){
   wfile002 << "comment" << endl;
   for (int i=0; i < n_align; i++)
     {
-      wfile002<< "C " << std::fixed << std::setprecision(5) << refR_xlist[i][0]*10 << " " << refR_xlist[i][1]*10 << " " << refR_xlist[i][2]*10 << endl;
+      wfile002<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << refR_xlist[i][0]*10 << " " << refR_xlist[i][1]*10 << " " << refR_xlist[i][2]*10 << endl;
     }
   wfile002.close();
 
@@ -517,7 +532,7 @@ void Brahan::calculate(){
   wfile003 << "comment" << endl;
   for (int i=0; i < n_align; i++)
     {
-      wfile003<< "C " << std::fixed << std::setprecision(5) << refP_xlist[i][0]*10 << " " << refP_xlist[i][1]*10 << " " << refP_xlist[i][2]*10 << endl;
+      wfile003<< params.P_atomName[i] << " " << std::fixed << std::setprecision(5) << refP_xlist[i][0]*10 << " " << refP_xlist[i][1]*10 << " " << refP_xlist[i][2]*10 << endl;
     }
   wfile003.close();
 
@@ -527,7 +542,7 @@ void Brahan::calculate(){
   wfile004 << "comment" << endl;
   for (int i=0; i < n_align; i++)
     {
-      wfile004<< "C " << std::fixed << std::setprecision(5) << refTS_xlist[i][0]*10 << " " << refTS_xlist[i][1]*10 << " " << refTS_xlist[i][2]*10 << endl;
+      wfile004<< params.TS_atomName[i] << " " << std::fixed << std::setprecision(5) << refTS_xlist[i][0]*10 << " " << refTS_xlist[i][1]*10 << " " << refTS_xlist[i][2]*10 << endl;
     }
   wfile004.close();
 
