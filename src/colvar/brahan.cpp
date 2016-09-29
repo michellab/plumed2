@@ -19,6 +19,8 @@ If you use the following template for this file then the manual and the calls to
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <iterator> // std::istream_iterator
+
 using namespace std;
 
 namespace PLMD{
@@ -36,6 +38,85 @@ At this point you provide the description of your CV that will appear in the man
       This ensures it has a label, a place to store its value, places to the store the values of the derivatives
       and that it can access the various atoms it will employ.
 */
+class parameter
+{
+public: 
+  void readParamFile(string &param_file, string &RParam_file, string &PParam_file, string &TSParam);
+  
+  vector<double> R_sigma;// sigma LJ parameter for Reactant
+  vector<double> R_epsilon;// epsilon LJ parameter for Reactant
+  vector<double> P_sigma;// sigma LJ parameter for Product
+  vector<double> P_epsilon;// epsilon LJ parameter for Product
+  vector<double> TS_sigma;// sigma LJ parameter for Product
+  vector<double> TS_epsilon;// sigma LJ parameter for Product
+  vector<double> bindSite_sigma;// sigma LJ parameter for binding site
+  vector<double> bindSite_epsilon;// epsilon LJ parameter for binding site
+  vector<double> R_charge;
+  vector<double> P_charge;
+  vector<double> TS_charge;
+  vector<double> bindSite_charge;
+
+};
+
+
+void parameter::readParamFile(string &bindingParam_file, string &RParam_file, string &PParam_file, string &TSParam_file)
+{
+
+  string files[4] = {bindingParam_file, RParam_file, PParam_file, TSParam_file} ;
+  for ( int i = 0; i < 4 ; i++)
+  {
+  //   cout << "file "<<  files[i] << endl;
+  
+   
+     FILE * pFile;
+     pFile = fopen(files[i].c_str(), "r" );
+     if (!pFile)
+       cout << "Cannot find binding parameter file" << endl;
+     else
+       cout << "reading parameter file " << files[i] << endl;
+       string line;
+       while(Tools::getline(pFile, line))
+       {
+         if (line[0] == '#')
+           continue;
+           //cout << line[0] << endl;
+         istringstream iss(line);
+         istream_iterator<string> beg(iss), end;
+         vector<string> tokens(beg, end);
+         // tokens[0] = index, tokens[1]= name, tokens[2]=type, tokens[3]=sigma, tokens[4]=epsilon, tokens[5]=charge
+         //cout <<"index " << tokens[0]<< " sigma " << tokens[3] << " epsilon "<< tokens[4] <<endl;
+         if (i==0)
+         { 
+           bindSite_sigma.push_back( atof(tokens[3].c_str()) );
+           bindSite_epsilon.push_back( atof(tokens[4].c_str()) );
+           bindSite_charge.push_back( atof(tokens[5].c_str()) );
+           //cout << tokens[0] << endl;
+         }
+         else if (i==1)
+         { 
+           R_sigma.push_back( atof(tokens[3].c_str()) );
+           R_epsilon.push_back( atof(tokens[4].c_str()) );
+           R_charge.push_back( atof(tokens[5].c_str()) );
+           //cout << tokens[0] << endl;
+         }
+         else if (i==2)
+         { 
+           P_sigma.push_back( atof(tokens[3].c_str()) );
+           P_epsilon.push_back( atof(tokens[4].c_str()) );
+           P_charge.push_back( atof(tokens[5].c_str()) );
+           //cout << tokens[0] << endl;
+         }
+         else if (i==3)
+         { 
+           TS_sigma.push_back( atof(tokens[3].c_str()) );
+           TS_epsilon.push_back( atof(tokens[4].c_str()) );
+           TS_charge.push_back( atof(tokens[5].c_str()) );
+           //cout << tokens[0] << endl;
+         }
+       }
+  }
+}
+
 class Brahan : public Colvar {
 	double param;
 private:
@@ -49,7 +130,7 @@ private:
  double refreactant_com[3]; // reference coordinates of the center of mass of the Reactant
  double refproduct_com[3]; // reference coordinates of the center of mass of the Reactant
  double refts_com[3]; // reference coordinates of the center of mass of the Reactant
-
+ parameter params;// parameter for energy calculation
 public:
  //---- This routine is used to create the descriptions of all the keywords used by your CV
  static void registerKeywords( Keywords& keys ); 
@@ -74,7 +155,10 @@ void Brahan::registerKeywords( Keywords& keys ){
  // ActionWithValue::registerKeywords(keys);
  // keys.remove("NUMERICAL_DERIVATIVES");
 //\endverbatim
-  keys.add("compulsory", "PARAM", "the value of input");
+  keys.add("compulsory", "BINDING_PARAM", "the parameter of binding site");
+  keys.add("compulsory", "R_PARAM", "the parameter of reactant");
+  keys.add("compulsory", "P_PARAM", "the parameter of product");
+  keys.add("compulsory", "TS_PARAM", "the parameter of product");
   keys.add("compulsory", "REACTANT", "the pdb of reactant");
   keys.add("compulsory", "PRODUCT", "the pdb of product");
   keys.add("compulsory", "TS", "the pdb of transition state");
@@ -86,12 +170,19 @@ void Brahan::registerKeywords( Keywords& keys ){
 
  //---- We now write the actual readin (constructor) and calculations routines for the colvar
 
+
+
+
+
+
+
 Brahan::Brahan(const ActionOptions&ao):
  //------ This line sets up various things in the plumed core which colvars rely on.
 PLUMED_COLVAR_INIT(ao)
 {
   //vector<int> atoms;  /----- You almost always have atoms -----/
-  parse("PARAM",param);
+  string bindingParam_file;
+  parse("BINDING_PARAM",bindingParam_file);
   string reactant_file;
   parse("REACTANT",reactant_file);
   string product_file;
@@ -100,18 +191,29 @@ PLUMED_COLVAR_INIT(ao)
   parse("TS",ts_file);
   string binding_file;
   parse("BINDING",binding_file);
+  string RParam_file;
+  parse("R_PARAM",RParam_file);
+  string PParam_file;
+  parse("P_PARAM",PParam_file);
+  string TSParam_file;
+  parse("TS_PARAM",TSParam_file);
   
   PDB reactant_pdb;
   if( !reactant_pdb.read(reactant_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
     error("missing input file " + reactant_file );
-
+  
   reactant_atoms = reactant_pdb.getAtomNumbers();
   const std::vector<Vector> reactant_positions = reactant_pdb.getPositions();
   const std::vector<double> reactant_masses = reactant_pdb.getOccupancy();
   cout << " Reactant has ? elements " << reactant_atoms.size() << endl; 
  // cout << " reactant_positions[0][0] " << reactant_positions[0][0] << endl; 
   //cout << " index [0] " << reactant_atoms[0].index() << endl;
-
+ // for (unsigned i=0; i< reactant_atoms.size() ; ++i){
+  
+//  string Rname = reactant_pdb.getAtomName( reactant_atoms[i] ); 
+//  cout << "reactant atom " << i <<  " name  " << Rname << endl;
+ 
+ //  }
   PDB product_pdb;
   if( !product_pdb.read(product_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
     error("missing input file " + product_file );
@@ -170,7 +272,7 @@ PLUMED_COLVAR_INIT(ao)
       refreactant_pos.push_back( Vector(reactant_positions[i][0], reactant_positions[i][1], reactant_positions[i][2]) );
 
       sub_mass_tot += reactant_masses[i];
-     
+
       refproduct_com[0] += product_masses[i] * product_positions[i][0];
       refproduct_com[1] += product_masses[i] * product_positions[i][1];
       refproduct_com[2] += product_masses[i] * product_positions[i][2];
@@ -185,26 +287,28 @@ PLUMED_COLVAR_INIT(ao)
 
       subts_mass_tot += ts_masses[i];
 
+
     }
 
   refreactant_com[0] /= sub_mass_tot;
   refreactant_com[1] /= sub_mass_tot;
   refreactant_com[2] /= sub_mass_tot;
+   
 
-  cout << " refreactant_com " << refreactant_com[0] << " " << refreactant_com[1] << " " << refreactant_com[2] << endl;
+//  cout << " refreactant_com " << refreactant_com[0] << " " << refreactant_com[1] << " " << refreactant_com[2] << endl;
 
   refproduct_com[0] /= subp_mass_tot;
   refproduct_com[1] /= subp_mass_tot;
   refproduct_com[2] /= subp_mass_tot;
 
-  cout << " refproduct_com " << refproduct_com[0] << " " << refproduct_com[1] << " " << refproduct_com[2] << endl;
+ // cout << " refproduct_com " << refproduct_com[0] << " " << refproduct_com[1] << " " << refproduct_com[2] << endl;
 
 
   refts_com[0] /= subts_mass_tot;
   refts_com[1] /= subts_mass_tot;
   refts_com[2] /= subts_mass_tot;
 
-  cout << " refts_com " << refts_com[0] << " " << refts_com[1] << " " << refts_com[2] << endl;
+ // cout << " refts_com " << refts_com[0] << " " << refts_com[1] << " " << refts_com[2] << endl;
 
 
 
@@ -232,8 +336,10 @@ PLUMED_COLVAR_INIT(ao)
 */  
  //getValue("")->setPeridodicity(true);  // Set this true if the CV is periodic otherwise set if false.
   // getValue("")->setDomain(min,max);     // This routine is only required if the function is periodic.  It sets the minimum and maximum values of the colvar.
-  cout << "PARAM " << param << endl;
-  log.printf(" PARAM %f \n" , param);
+  // read paramter file
+  params.readParamFile(bindingParam_file, RParam_file, PParam_file, TSParam_file);
+
+
 }
 
 void Brahan::calculate(){
@@ -276,7 +382,7 @@ void Brahan::calculate(){
   sub_com[0] /= sub_mass;
   sub_com[1] /= sub_mass;
   sub_com[2] /= sub_mass;
-  cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
+//  cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
 
   double refR_xlist[n_reactantatoms][3]; // coordinate of referece substrate reactant
   double refP_xlist[n_reactantatoms][3]; // coordinate of referece substrate product
@@ -424,7 +530,7 @@ void Brahan::calculate(){
   wfile004.close();
 
 
-
+/**
   cout << "Just called calculated_rotation_rmsd" << endl;
   cout << "rotmat elements  of reactant reference :" << endl;
   cout << rotmatR[0][0] << " " << rotmatR[0][1] << " " << rotmatR[0][2] << endl;
@@ -445,14 +551,14 @@ void Brahan::calculate(){
   cout << rotmatTS[1][0] << " " << rotmatTS[1][1] << " " << rotmatTS[1][2] << endl;
   cout << rotmatTS[2][0] << " " << rotmatTS[2][1] << " " << rotmatTS[2][2] << endl; 
   cout << "rmsd " << rmsdTS << endl;
-
+*/
 // calculate energy
   double Coulomb_R = 0.0; // the Coulombic energy of reactant with binding site
   double Coulomb_P = 0.0; // the Coulombic energy of product with binding site
   double Coulomb_TS = 0.0; // the Coulombic energy of transition state with binding site
-//  double LJ_R = 0.0; // the LJ energy of reactant with binding site
-//  double LJ_P = 0.0; // the LJ energy of product with binding site
-//  double LJ_TS = 0.0; // the LJ energy of transition state with binding site
+  double LJ_R = 0.0; // the LJ energy of reactant with binding site
+  double LJ_P = 0.0; // the LJ energy of product with binding site
+  double LJ_TS = 0.0; // the LJ energy of transition state with binding site
   double Ke = 8.98755e9;
   double qi = 0.0;
   double qj = 0.0;
@@ -492,22 +598,31 @@ void Brahan::calculate(){
          Coulomb_TS += ((Ke*qi*qj)/distTS) ; // the Coulombic energy of TS with binding site
         
          Coulomb_R += ((Ke*qi*qj)/distR) ; // the Coulombic energy of reactant with binding site
-         cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
+        // cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
          // calculate the Lennard Jones energy
-         // V(LJ) = C12/(Rij)^12 - C6/(Rij)^6
-        // string name = getNameAtomFromResidueAndChain( reactant_atoms,i);
-        //  string name = getAtomName( reactant_atoms, i);
-   //      cout << "name " << name << endl;                
+         // V(LJ) = 4(Eij)(sigmaij^12/(Rij)^12 - sigmaij^6/(Rij)^6)
 
-
-
+         double R_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.R_sigma[j]);
+         double R_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.R_epsilon[j]);
+         LJ_R += 4*R_epsilonij*(  pow((R_sigmaij/distR),12) - pow( (R_sigmaij/distR),6)  ) ;
+       
+         //cout << "bind atom " << i-n_reactantatoms <<" sigma " << params.bindSite_sigma[i-n_reactantatoms] << " R atom " << j << " sigma " << params.R_sigma[j] << " sigmaij " << R_sigmaij << endl;
+         //cout << "bind atom " << i-n_reactantatoms <<" epsilon " << params.bindSite_epsilon[i-n_reactantatoms] << " R atom " << j << " epsilon " << params.R_epsilon[j] << " epsilonij " << R_epsilonij << endl;
+         //cout << "bind atom " << i-n_reactantatoms << " R atom " << j << " sigma ij  " << R_sigmaij << " epsilon ij " <<   R_epsilonij << " dist R " << distR << " LJ energy " << LJ_R << endl;
+         double P_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.P_sigma[j]);
+         double P_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.P_epsilon[j]);
+         LJ_P += 4*P_epsilonij*(  pow((P_sigmaij/distP),12) - pow( (P_sigmaij/distP),6)  ) ;
+      
+         double TS_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.TS_sigma[j]);
+         double TS_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.TS_epsilon[j]);
+         LJ_TS += 4*TS_epsilonij*(  pow((TS_sigmaij/distTS),12) - pow( (TS_sigmaij/distTS),6)  ) ;
+          
 
        }
     }
-
-    cout << "CoulombR " << Coulomb_R << endl;
-    cout << "CoulombP " << Coulomb_P << endl;
-    cout << "CoulombTS " << Coulomb_TS << endl;
+    cout << "CoulombR " << Coulomb_R << " LJ R " << LJ_R << endl;
+    cout << "CoulombP " << Coulomb_P << "LJ P " << LJ_P <<  endl;
+    cout << "CoulombTS " << Coulomb_TS <<  " LJ TS " << LJ_TS << endl;
   setValue(brahan_val);
 }
 //\endverbatim
