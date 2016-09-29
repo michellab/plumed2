@@ -443,6 +443,8 @@ void Brahan::calculate(){
   movTS_to_ref[2] = refts_com[2] - mov_com[2];
 
   // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
+  int step = getStep();
+
   ofstream wfile000;
   wfile000.open("mov-xlist-bef.xyz");
   int n_align = reactant_atoms.size();
@@ -561,7 +563,9 @@ void Brahan::calculate(){
   double LJ_TS = 0.0; // the LJ energy of transition state with binding site
   double Ke = 8.98755e9;
   double qi = 0.0;
-  double qj = 0.0;
+  double qjR = 0.0;
+  double qjP = 0.0;
+  double qjTS = 0.0;
   unsigned n_bindingatoms = binding_atoms.size();
   /// loop over binding site atom
   for (unsigned i= n_reactantatoms; i < n_reactantatoms+n_bindingatoms; ++i)
@@ -590,14 +594,16 @@ void Brahan::calculate(){
          double distTS = sqrt(TSx*TSx + TSy*TSy + TSz*TSz) ;
       //   cout << "TSx " << TSx << "TSy " << TSy << "TSz " << TSz << "dist "<< distTS << endl;
          qi = getCharge(i);
-         qj = getCharge(j);
+         qjR = params.R_charge[j];     //qj = getCharge(j);
+         qjP = params.P_charge[j];     //qj = getCharge(j);
+         qjTS = params.TS_charge[j];     //qj = getCharge(j);
      // Coulomb_R += ((Ke*qi*qj)/distR) ; // the Coulombic energy of reactant with binding site
      
-         Coulomb_P += ((Ke*qi*qj)/distP) ; // the Coulombic energy of product with binding site
+         Coulomb_P += ((Ke*qi*qjP)/distP) ; // the Coulombic energy of product with binding site
      
-         Coulomb_TS += ((Ke*qi*qj)/distTS) ; // the Coulombic energy of TS with binding site
+         Coulomb_TS += ((Ke*qi*qjP)/distTS) ; // the Coulombic energy of TS with binding site
         
-         Coulomb_R += ((Ke*qi*qj)/distR) ; // the Coulombic energy of reactant with binding site
+         Coulomb_R += ((Ke*qi*qjTS)/distR) ; // the Coulombic energy of reactant with binding site
         // cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
          // calculate the Lennard Jones energy
          // V(LJ) = 4(Eij)(sigmaij^12/(Rij)^12 - sigmaij^6/(Rij)^6)
@@ -620,7 +626,8 @@ void Brahan::calculate(){
 
        }
     }
-    cout << "CoulombR " << Coulomb_R << " LJ R " << LJ_R << endl;
+    cout << "Step " << step << endl;
+    cout << " CoulombR " << Coulomb_R << " LJ R " << LJ_R << endl;
     cout << "CoulombP " << Coulomb_P << "LJ P " << LJ_P <<  endl;
     cout << "CoulombTS " << Coulomb_TS <<  " LJ TS " << LJ_TS << endl;
   setValue(brahan_val);
