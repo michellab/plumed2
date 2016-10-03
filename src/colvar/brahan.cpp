@@ -138,6 +138,8 @@ private:
  double refreactant_com[3]; // reference coordinates of the center of mass of the Reactant
  double refproduct_com[3]; // reference coordinates of the center of mass of the Reactant
  double refts_com[3]; // reference coordinates of the center of mass of the Reactant
+ int LJ_rule; // the combining rule of LJ parameter
+
  parameter params;// parameter for energy calculation
 public:
  //---- This routine is used to create the descriptions of all the keywords used by your CV
@@ -171,6 +173,7 @@ void Brahan::registerKeywords( Keywords& keys ){
   keys.add("compulsory", "PRODUCT", "the pdb of product");
   keys.add("compulsory", "TS", "the pdb of transition state");
   keys.add("compulsory", "BINDING", "the pdb of binding site");
+  keys.add("optional", "LJ_RULE", "the combinding rule of LJ parameter (1)defalt, (2) use Lorentz-Berthebt rule");
 //In here you should add all your descriptions of the keywords used by your colvar as well as descriptions of any components
 //that you can use this colvar to calculate. Descriptions as to how to do this can be found here: \ref usingDoxygen
 
@@ -205,7 +208,16 @@ PLUMED_COLVAR_INIT(ao)
   parse("P_PARAM",PParam_file);
   string TSParam_file;
   parse("TS_PARAM",TSParam_file);
-  
+  string LJ_rule_string;
+  parse("LJ_RULE",LJ_rule_string);
+  if (LJ_rule_string.length() == 0)
+    LJ_rule_string = "null";
+  if (LJ_rule_string != "null")
+    LJ_rule=atoi(LJ_rule_string.c_str());
+  else
+    LJ_rule= 0;
+
+
   PDB reactant_pdb;
   if( !reactant_pdb.read(reactant_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
     error("missing input file " + reactant_file );
@@ -586,10 +598,11 @@ void Brahan::calculate(){
   for (unsigned i= n_reactantatoms; i < n_reactantatoms+n_bindingatoms; ++i)
     {
      ///loop over reactant atom
+     Vector binding_pos = getPosition(i); // coordinate of binding site atom i
+     qi = params.bindSite_charge[i];
      for (unsigned j=0; j < n_reactantatoms; ++j )
        { 
                  
-         Vector binding_pos = getPosition(i); // coordinate of binding site atom i
 
          // calculate distance atom i and j (magnitude of Rij)
          double Rx = binding_pos[0] - refR_xlist[j][0] ;
@@ -608,7 +621,6 @@ void Brahan::calculate(){
          double TSz = binding_pos[2] - refTS_xlist[j][2] ;
          double distTS = sqrt(TSx*TSx + TSy*TSy + TSz*TSz) ;
       //   cout << "TSx " << TSx << "TSy " << TSy << "TSz " << TSz << "dist "<< distTS << endl;
-         qi = getCharge(i);
          qjR = params.R_charge[j];     //qj = getCharge(j);
          qjP = params.P_charge[j];     //qj = getCharge(j);
          qjTS = params.TS_charge[j];     //qj = getCharge(j);
@@ -622,22 +634,53 @@ void Brahan::calculate(){
         // cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
          // calculate the Lennard Jones energy
          // V(LJ) = 4(Eij)(sigmaij^12/(Rij)^12 - sigmaij^6/(Rij)^6)
-
-         double R_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.R_sigma[j]);
-         double R_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.R_epsilon[j]);
-         LJ_R += 4*R_epsilonij*(  pow((R_sigmaij/distR),12) - pow( (R_sigmaij/distR),6)  ) ;
+         if (LJ_rule==1)
+         {
+           double R_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.R_sigma[j]);
+           double R_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.R_epsilon[j]);
+           LJ_R += 4*R_epsilonij*(  pow((R_sigmaij/distR),12) - pow( (R_sigmaij/distR),6)  ) ;
        
-         //cout << "bind atom " << i-n_reactantatoms <<" sigma " << params.bindSite_sigma[i-n_reactantatoms] << " R atom " << j << " sigma " << params.R_sigma[j] << " sigmaij " << R_sigmaij << endl;
-         //cout << "bind atom " << i-n_reactantatoms <<" epsilon " << params.bindSite_epsilon[i-n_reactantatoms] << " R atom " << j << " epsilon " << params.R_epsilon[j] << " epsilonij " << R_epsilonij << endl;
-         //cout << "bind atom " << i-n_reactantatoms << " R atom " << j << " sigma ij  " << R_sigmaij << " epsilon ij " <<   R_epsilonij << " dist R " << distR << " LJ energy " << LJ_R << endl;
-         double P_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.P_sigma[j]);
-         double P_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.P_epsilon[j]);
-         LJ_P += 4*P_epsilonij*(  pow((P_sigmaij/distP),12) - pow( (P_sigmaij/distP),6)  ) ;
+           //cout << "bind atom " << i-n_reactantatoms <<" sigma " << params.bindSite_sigma[i-n_reactantatoms] << " R atom " << j << " sigma " << params.R_sigma[j] << " sigmaij " << R_sigmaij << endl;
+           //cout << "bind atom " << i-n_reactantatoms <<" epsilon " << params.bindSite_epsilon[i-n_reactantatoms] << " R atom " << j << " epsilon " << params.R_epsilon[j] << " epsilonij " << R_epsilonij << endl;
+           //cout << "bind atom " << i-n_reactantatoms << " R atom " << j << " sigma ij  " << R_sigmaij << " epsilon ij " <<   R_epsilonij << " dist R " << distR << " LJ energy " << LJ_R << endl;
+           double P_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.P_sigma[j]);
+           double P_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.P_epsilon[j]);
+           LJ_P += 4*P_epsilonij*(  pow((P_sigmaij/distP),12) - pow( (P_sigmaij/distP),6)  ) ;
       
-         double TS_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.TS_sigma[j]);
-         double TS_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.TS_epsilon[j]);
-         LJ_TS += 4*TS_epsilonij*(  pow((TS_sigmaij/distTS),12) - pow( (TS_sigmaij/distTS),6)  ) ;
-          
+           double TS_sigmaij = 0.5*(params.bindSite_sigma[i-n_reactantatoms] + params.TS_sigma[j]);
+           double TS_epsilonij = sqrt(params.bindSite_epsilon[i-n_reactantatoms]*params.TS_epsilon[j]);
+           LJ_TS += 4*TS_epsilonij*(  pow((TS_sigmaij/distTS),12) - pow( (TS_sigmaij/distTS),6)  ) ;
+         }
+         else
+         {
+           // VLJ = Aij/Rij^12 - Bij/R^6
+           double Ai = 4*params.bindSite_epsilon[i-n_reactantatoms]* ( pow( params.bindSite_sigma[i-n_reactantatoms],12) ) ;
+           double Bi = 4*params.bindSite_epsilon[i-n_reactantatoms]* ( pow( params.bindSite_sigma[i-n_reactantatoms],6) ) ;
+           double Aj_R = 4*params.R_epsilon[j]* ( pow( params.R_sigma[j],12) ) ;
+           double Bj_R = 4*params.R_epsilon[j]* ( pow( params.R_sigma[j],6) ) ;
+	   double Aij_R = sqrt( Ai * Aj_R ) ;
+	   double Bij_R = sqrt( Bi * Bj_R ) ;
+
+           LJ_R += (Aij_R/pow(distR,12)) - (Bij_R/pow(distR,6))  ;
+       
+           //cout << "bind atom " << i-n_reactantatoms <<" sigma " << params.bindSite_sigma[i-n_reactantatoms] << " R atom " << j << " sigma " << params.R_sigma[j] << " sigmaij " << R_sigmaij << endl;
+           //cout << "bind atom " << i-n_reactantatoms <<" epsilon " << params.bindSite_epsilon[i-n_reactantatoms] << " R atom " << j << " epsilon " << params.R_epsilon[j] << " epsilonij " << R_epsilonij << endl;
+           //cout << "bind atom " << i-n_reactantatoms << " R atom " << j << " sigma ij  " << R_sigmaij << " epsilon ij " <<   R_epsilonij << " dist R " << distR << " LJ energy " << LJ_R << endl;
+           double Aj_P = 4*params.P_epsilon[j]* ( pow( params.P_sigma[j],12) ) ;
+           double Bj_P = 4*params.P_epsilon[j]* ( pow( params.P_sigma[j],6) ) ;
+	   double Aij_P = sqrt( Ai * Aj_P ) ;
+	   double Bij_P = sqrt( Bi * Bj_P ) ;
+
+           LJ_P += (Aij_P/pow(distP,12)) - (Bij_P/pow(distP,6))  ;
+
+           double Aj_TS = 4*params.TS_epsilon[j]* ( pow( params.TS_sigma[j],12) ) ;
+           double Bj_TS = 4*params.TS_epsilon[j]* ( pow( params.TS_sigma[j],6) ) ;
+	   double Aij_TS = sqrt( Ai * Aj_TS ) ;
+	   double Bij_TS = sqrt( Bi * Bj_TS ) ;
+
+           LJ_TS += (Aij_TS/pow(distTS,12)) - (Bij_TS/pow(distTS,6))  ;
+           cout << " LJ defalt " << endl;    
+         } 
 
        }
     }
