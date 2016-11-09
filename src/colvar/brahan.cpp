@@ -1,4 +1,4 @@
-// This document is formatted for Doxygen
+
 /**
 \page AddingAColvar How to add a new collective variable
 To implement a CV one you need to create a single cpp file called <i>ColvarName</i>.cpp in the directory src/colvar. 
@@ -128,13 +128,23 @@ void parameter::readParamFile(string &bindingParam_file, string &RParam_file, st
 class Brahan : public Colvar {
 	double param;
 private:
- vector<AtomNumber> reactant_atoms;//list of reactant atoms used for CV
+ vector<AtomNumber> reactant_atoms;//list of product atoms used for CV
  vector<AtomNumber> product_atoms;//list of product atoms used for CV
  vector<AtomNumber> ts_atoms;//list of ts atoms used for CV
  vector<AtomNumber> binding_atoms;//list of ts atoms used for CV
  vector<Vector> refreactant_pos;// reference coordinates Reactant for alignment
  vector<Vector> refproduct_pos;// reference coordinates Reactant for alignment
  vector<Vector> refts_pos;// reference coordinates Reactant for alignment
+ vector<AtomNumber> refRalign_atoms;// list of atom of Reactant for alignment
+ vector<int> refRalign_iIndex;
+ vector<AtomNumber> refPalign_atoms;// 
+ vector<AtomNumber> refTSalign_atoms;// 
+ vector<Vector> refRalign_pos;// list of atom of Reactant for alignment
+ vector<Vector> refPalign_pos;// 
+ vector<Vector> refTSalign_pos;//
+ double refRalign_com[3]; //reference coordinate of center of mass of the Reactant with beta 1.0 (for alignment)
+ double refPalign_com[3]; //
+ double refTSalign_com[3]; //
  double refreactant_com[3]; // reference coordinates of the center of mass of the Reactant
  double refproduct_com[3]; // reference coordinates of the center of mass of the Reactant
  double refts_com[3]; // reference coordinates of the center of mass of the Reactant
@@ -225,15 +235,16 @@ PLUMED_COLVAR_INIT(ao)
   reactant_atoms = reactant_pdb.getAtomNumbers();
   const std::vector<Vector> reactant_positions = reactant_pdb.getPositions();
   const std::vector<double> reactant_masses = reactant_pdb.getOccupancy();
+  const std::vector<double> reactant_beta = reactant_pdb.getBeta(); // using beta for alignment 
   cout << " Reactant has ? elements " << reactant_atoms.size() << endl; 
+  //cout << " reactant_beta[0][0] " << reactant_beta[0] << endl; 
  // cout << " reactant_positions[0][0] " << reactant_positions[0][0] << endl; 
   //cout << " index [0] " << reactant_atoms[0].index() << endl;
- // for (unsigned i=0; i< reactant_atoms.size() ; ++i){
-  
-//  string Rname = reactant_pdb.getAtomName( reactant_atoms[i] ); 
+  //for (unsigned i=0; i< reactant_atoms.size() ; ++i){
+ // string Rname = reactant_pdb.getAtomName( reactant_atoms[i] ); 
 //  cout << "reactant atom " << i <<  " name  " << Rname << endl;
  
- //  }
+ // }
   PDB product_pdb;
   if( !product_pdb.read(product_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) ) // using getAtoms from Plumedmain class
     error("missing input file " + product_file );
@@ -241,6 +252,7 @@ PLUMED_COLVAR_INIT(ao)
   product_atoms = product_pdb.getAtomNumbers();
   const std::vector<Vector> product_positions = product_pdb.getPositions();
   const std::vector<double> product_masses = product_pdb.getOccupancy();
+  const std::vector<double> product_beta = product_pdb.getBeta(); // using beta for alignment 
   cout << " Product has ? elements " << product_atoms.size() << endl;
 
 
@@ -251,6 +263,7 @@ PLUMED_COLVAR_INIT(ao)
   ts_atoms = ts_pdb.getAtomNumbers();
   const std::vector<Vector> ts_positions = ts_pdb.getPositions();
   const std::vector<double> ts_masses = ts_pdb.getOccupancy();
+  const std::vector<double> ts_beta = ts_pdb.getBeta(); // using beta for alignment 
   cout << " Transition state has ? elements " << ts_atoms.size() << endl;
 
 
@@ -270,6 +283,122 @@ PLUMED_COLVAR_INIT(ao)
     // of the CV and that the CV will act on a particular list of atoms.
   addValueWithDerivatives();
   setNotPeriodic();
+
+// using only atom of beta 1.0 for calculating center of mass
+// Save the atom number, masses, position  for beta 1.0 atom for alignment
+  vector<double> refRalign_masses;
+  vector<Vector> refRalign_positions;
+  vector<double> refPalign_masses;
+  vector<Vector> refPalign_positions;
+  vector<double> refTSalign_masses;
+  vector<Vector> refTSalign_positions;
+
+  for (int i=0; i< reactant_atoms.size() ; ++i)
+    {
+      if(reactant_beta[i] == 1.0)
+        refRalign_iIndex.push_back(i);
+    }
+
+
+  for (unsigned i=0; i< reactant_atoms.size() ; ++i)
+    {
+      if(reactant_beta[i] == 1.0)
+        {
+          refRalign_atoms.push_back(reactant_atoms[i]) ;
+          refRalign_masses.push_back(reactant_masses[i]) ;  
+          refRalign_positions.push_back( Vector(reactant_positions[i][0], reactant_positions[i][1], reactant_positions[i][2]) );
+          cout << "reactant atom i " << i << " x " << reactant_positions[i][0] << " y " << reactant_positions[i][1] << " z " << reactant_positions[i][2] << endl;
+        }
+
+   }
+  
+  for (unsigned i=0; i< product_atoms.size() ; ++i)
+    {
+      if(product_beta[i] == 1.0)
+        {
+          refPalign_atoms.push_back(product_atoms[i]) ;
+          refPalign_masses.push_back(product_masses[i]) ;  
+          refPalign_positions.push_back( Vector(product_positions[i][0], product_positions[i][1], product_positions[i][2]) );
+        }
+    }
+  
+  for (unsigned i=0; i< ts_atoms.size() ; ++i)
+    {
+      if(product_beta[i] == 1.0)
+        { 
+          refTSalign_atoms.push_back(ts_atoms[i]) ;
+          refTSalign_masses.push_back(ts_masses[i]) ;  
+          refTSalign_positions.push_back( Vector(ts_positions[i][0], ts_positions[i][1], ts_positions[i][2]) );
+        }
+    }
+
+
+
+
+// Reactant , Product, TS
+  double Ralign_mass_tot= 0.0;
+  refRalign_com[0]=0.0 ;//x 
+  refRalign_com[1]=0.0 ;//y
+  refRalign_com[2]=0.0 ;//z
+  double Palign_mass_tot= 0.0;
+  refPalign_com[0]=0.0 ;//x 
+  refPalign_com[1]=0.0 ;//y
+  refPalign_com[2]=0.0 ;//z
+  double TSalign_mass_tot= 0.0;
+  refTSalign_com[0]=0.0 ;//x 
+  refTSalign_com[1]=0.0 ;//y
+  refTSalign_com[2]=0.0 ;//z
+
+  for (unsigned i=0; i< refRalign_atoms.size() ; ++i)
+    {
+      refRalign_com[0] += refRalign_masses[i] * refRalign_positions[i][0];
+      refRalign_com[1] += refRalign_masses[i] * refRalign_positions[i][1];
+      refRalign_com[2] += refRalign_masses[i] * refRalign_positions[i][2];
+      refRalign_pos.push_back( Vector(refRalign_positions[i][0], refRalign_positions[i][1], refRalign_positions[i][2]) );
+
+      Ralign_mass_tot += refRalign_masses[i];
+
+    }
+
+  refRalign_com[0] /= Ralign_mass_tot;
+  refRalign_com[1] /= Ralign_mass_tot;
+  refRalign_com[2] /= Ralign_mass_tot;
+
+ // cout << " refRalign_com " << refRalign_com[0] << " " << refRalign_com[1] << " " << refRalign_com[2] << endl;
+
+  for (unsigned i=0; i< refPalign_atoms.size() ; ++i)
+    {
+      refPalign_com[0] += refPalign_masses[i] * refPalign_positions[i][0];
+      refPalign_com[1] += refPalign_masses[i] * refPalign_positions[i][1];
+      refPalign_com[2] += refPalign_masses[i] * refPalign_positions[i][2];
+      refPalign_pos.push_back( Vector(refPalign_positions[i][0], refPalign_positions[i][1], refPalign_positions[i][2]) );
+
+      Palign_mass_tot += refPalign_masses[i];
+
+    }
+
+  refPalign_com[0] /= Palign_mass_tot;
+  refPalign_com[1] /= Palign_mass_tot;
+  refPalign_com[2] /= Palign_mass_tot;
+
+  for (unsigned i=0; i< refTSalign_atoms.size() ; ++i)
+    {
+      refTSalign_com[0] += refTSalign_masses[i] * refTSalign_positions[i][0];
+      refTSalign_com[1] += refTSalign_masses[i] * refTSalign_positions[i][1];
+      refTSalign_com[2] += refTSalign_masses[i] * refTSalign_positions[i][2];
+      refTSalign_pos.push_back( Vector(refTSalign_positions[i][0], refTSalign_positions[i][1], refTSalign_positions[i][2]) );
+
+      TSalign_mass_tot += refTSalign_masses[i];
+
+    }
+
+  refTSalign_com[0] /= TSalign_mass_tot;
+  refTSalign_com[1] /= TSalign_mass_tot;
+  refTSalign_com[2] /= TSalign_mass_tot;
+
+
+//   using all atoms for calculating center of mass
+
 // calculate the center of mass of substrate reference file
   double sub_mass_tot = 0.0;
   refreactant_com[0] =0.0;
@@ -364,12 +493,8 @@ PLUMED_COLVAR_INIT(ao)
 
 void Brahan::calculate(){
 //--- These are the things you must calculate for any cv ---/
+
   double brahan_val=0.0;
-  
-
-
-
-
 
  // Tensor boxDerivatives;      /--- The derivative of the cv with respect to the box vectors ----/
  // vector<double> derivatives; /--- The derivative of the cv with respect to the atom positions ---/
@@ -384,16 +509,21 @@ void Brahan::calculate(){
   //setValue(param);
   cout << "Beginning  Brahan calculation "<< endl;
   cout << ".............................. "<< endl;
+  int step = getStep();
   unsigned n_reactantatoms = reactant_atoms.size();
-//  unsigned n_bindingatoms = binding_atoms.size();
+  unsigned n_productatoms = product_atoms.size();
+  unsigned n_tsatoms = ts_atoms.size();
+
+  unsigned n_bindingatoms = binding_atoms.size();
+  unsigned n_alignment = refRalign_atoms.size();
   double sub_com[3] = {0.0, 0.0 ,0.0};
   double sub_mass=0.0;
 
-// calculate new center of mass of substate
-  for (unsigned j =0; j < n_reactantatoms ; ++j)
+// calculate new center of mass of alignment atoms
+  for (unsigned j =0; j < n_alignment ; ++j)
     {
-      double j_mass = getMass(j);     
-      Vector j_pos = getPosition(j);
+      double j_mass = getMass(refRalign_iIndex[j]);     
+      Vector j_pos = getPosition(refRalign_iIndex[j]);
       sub_com[0] += j_mass * j_pos[0];
       sub_com[1] += j_mass * j_pos[1];
       sub_com[2] += j_mass * j_pos[2];
@@ -402,44 +532,46 @@ void Brahan::calculate(){
   sub_com[0] /= sub_mass;
   sub_com[1] /= sub_mass;
   sub_com[2] /= sub_mass;
-//  cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
+  //cout << " sub_com " << sub_com[0] << " " << sub_com[1] << " " << sub_com[2] << endl;
 
-  double refR_xlist[n_reactantatoms][3]; // coordinate of referece substrate reactant
-  double refP_xlist[n_reactantatoms][3]; // coordinate of referece substrate product
-  double refTS_xlist[n_reactantatoms][3]; // coordinate of referece substrate ts
-  double mov_xlist[n_reactantatoms][3]; // new coordinate of substate
+ 
+  double refR_align[n_alignment][3]; // coordinate of referece reactant for aligment
+  double refP_align[n_alignment][3]; // 
+  double refTS_align[n_alignment][3]; //
+  double mov_xlist[n_alignment][3]; // new coordinate of substate
   double mov_com[3] = {0.0,0.0,0.0}; // new center of mass of substrate
   double movR_to_ref[3]; // vector between the com of move and ref reactant substate
-  double movP_to_ref[3]; // vector between the com of move and ref product substate
-  double movTS_to_ref[3]; // vector between the com of move and ref ts substate
+  double movP_to_ref[3]; // 
+  double movTS_to_ref[3]; // 
   double rotmatR[3][3]; //the rotation matrix for least-squares fit
   double rotmatP[3][3]; //the rotation matrix for least-squares fit
   double rotmatTS[3][3]; //the rotation matrix for least-squares fit
   double rmsdR = 0.0;
   double rmsdP = 0.0;
   double rmsdTS = 0.0;
-
   double mov_mass_tot=0.0;
 
-  for (unsigned i=0; i < n_reactantatoms ; ++i)
+// using aligment atom beta 1.0 for alignment
+
+  for (unsigned i=0; i < n_alignment ; ++i)
     {
-      refR_xlist[i][0] = refreactant_pos[i][0];
-      refR_xlist[i][1] = refreactant_pos[i][1];
-      refR_xlist[i][2] = refreactant_pos[i][2];
+      refR_align[i][0] = refRalign_pos[i][0];
+      refR_align[i][1] = refRalign_pos[i][1];
+      refR_align[i][2] = refRalign_pos[i][2];
 
-      refP_xlist[i][0] = refproduct_pos[i][0];
-      refP_xlist[i][1] = refproduct_pos[i][1];
-      refP_xlist[i][2] = refproduct_pos[i][2];
+      refP_align[i][0] = refPalign_pos[i][0];
+      refP_align[i][1] = refPalign_pos[i][1];
+      refP_align[i][2] = refPalign_pos[i][2];
 
-      refTS_xlist[i][0] = refts_pos[i][0];
-      refTS_xlist[i][1] = refts_pos[i][1];
-      refTS_xlist[i][2] = refts_pos[i][2];
+      refTS_align[i][0] = refTSalign_pos[i][0];
+      refTS_align[i][1] = refTSalign_pos[i][1];
+      refTS_align[i][2] = refTSalign_pos[i][2];
 
-      Vector i_pos = getPosition( i );
+      Vector i_pos = getPosition(refRalign_iIndex[i]);
       mov_xlist[i][0] = i_pos[0];
       mov_xlist[i][1] = i_pos[1];
       mov_xlist[i][2] = i_pos[2];
-      double i_mass = getMass( i );
+      double i_mass = getMass( refRalign_iIndex[i] );
       mov_mass_tot += i_mass;
       mov_com[0] += i_mass * i_pos[0];
       mov_com[1] += i_mass * i_pos[1];
@@ -450,32 +582,17 @@ void Brahan::calculate(){
   mov_com[1] /= mov_mass_tot;
   mov_com[2] /= mov_mass_tot;
 
-  movR_to_ref[0] = refreactant_com[0] - mov_com[0];
-  movR_to_ref[1] = refreactant_com[1] - mov_com[1];
-  movR_to_ref[2] = refreactant_com[2] - mov_com[2];
+  movR_to_ref[0] = refRalign_com[0] - mov_com[0];
+  movR_to_ref[1] = refRalign_com[1] - mov_com[1];
+  movR_to_ref[2] = refRalign_com[2] - mov_com[2];
 
-  movP_to_ref[0] = refproduct_com[0] - mov_com[0];
-  movP_to_ref[1] = refproduct_com[1] - mov_com[1];
-  movP_to_ref[2] = refproduct_com[2] - mov_com[2];
+  movP_to_ref[0] = refPalign_com[0] - mov_com[0];
+  movP_to_ref[1] = refPalign_com[1] - mov_com[1];
+  movP_to_ref[2] = refPalign_com[2] - mov_com[2];
 
-  movTS_to_ref[0] = refts_com[0] - mov_com[0];
-  movTS_to_ref[1] = refts_com[1] - mov_com[1];
-  movTS_to_ref[2] = refts_com[2] - mov_com[2];
-
-  // Here for debugging purposes, write oordinates of mov-xlist are indeed those of the alignement atoms
-  int step = getStep();
-
-  ofstream wfile000;
-  wfile000.open("mov-xlist-bef.xyz");
-  int n_align = reactant_atoms.size();
-  wfile000 << n_align << endl;
-  wfile000 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile000<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
-      //wfile000<< "C " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
-    }
-  wfile000.close();
+  movTS_to_ref[0] = refTSalign_com[0] - mov_com[0];
+  movTS_to_ref[1] = refTSalign_com[1] - mov_com[1];
+  movTS_to_ref[2] = refTSalign_com[2] - mov_com[2];
 
 
   rotmatR[0][0] = 1.0;
@@ -508,56 +625,32 @@ void Brahan::calculate(){
   rotmatTS[2][1] = 0.0;
   rotmatTS[2][2] = 1.0;
 
-  calculate_rotation_rmsd( refR_xlist, mov_xlist, n_reactantatoms, mov_com, movR_to_ref, rotmatR, &rmsdR  );
-  calculate_rotation_rmsd( refP_xlist, mov_xlist, n_reactantatoms, mov_com, movP_to_ref, rotmatP, &rmsdP  );
-  calculate_rotation_rmsd( refTS_xlist, mov_xlist, n_reactantatoms, mov_com, movTS_to_ref, rotmatTS, &rmsdTS  );
+
+/**
+  ofstream wfilebefore;
+  wfilebefore.open("refR_align-beforealign.xyz");
+  wfilebefore << n_alignment << endl;
+  wfilebefore << "comment" << endl;
+  for (unsigned i=0; i < n_alignment; i++)
+    {
+      wfilebefore << params.R_atomName[refRalign_iIndex[i]] <<" " << std::fixed << std::setprecision(5) << refR_align[i][0]*10 << " " << refR_align[i][1]*10 << " " << refR_align[i][2]*10 << endl;
+    }
+  wfilebefore.close();
   
-  string  xyzfile = "mov-xlist.xyz";
-  ostringstream convertstep;
-  convertstep << step;
-  string xyzstep;
-  xyzstep = convertstep.str() + xyzfile;
-  // cout << xyzstep << endl;
-  ofstream wfile001;
-  wfile001.open(xyzstep.c_str());
-  wfile001 << n_align << endl;
-  wfile001 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
+  ofstream wfilebefore2;
+  wfilebefore2.open("mov_xlist-beforealign.xyz");
+  wfilebefore2 << n_alignment << endl;
+  wfilebefore2 << "comment" << endl;
+  for (unsigned i=0; i < n_alignment; i++)
     {
-      wfile001<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+      wfilebefore2 << params.R_atomName[refRalign_iIndex[i]] <<" " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
     }
-  wfile001.close();
+  wfilebefore2.close();
+*/
 
-  ofstream wfile002;
-  wfile002.open("refreactant-xlist.xyz");
-  wfile002 << n_align << endl;
-  wfile002 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile002<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << refR_xlist[i][0]*10 << " " << refR_xlist[i][1]*10 << " " << refR_xlist[i][2]*10 << endl;
-    }
-  wfile002.close();
-
-  ofstream wfile003;
-  wfile003.open("refproduct-xlist.xyz");
-  wfile003 << n_align << endl;
-  wfile003 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile003<< params.P_atomName[i] << " " << std::fixed << std::setprecision(5) << refP_xlist[i][0]*10 << " " << refP_xlist[i][1]*10 << " " << refP_xlist[i][2]*10 << endl;
-    }
-  wfile003.close();
-
-  ofstream wfile004;
-  wfile004.open("refts-xlist.xyz");
-  wfile004 << n_align << endl;
-  wfile004 << "comment" << endl;
-  for (int i=0; i < n_align; i++)
-    {
-      wfile004<< params.TS_atomName[i] << " " << std::fixed << std::setprecision(5) << refTS_xlist[i][0]*10 << " " << refTS_xlist[i][1]*10 << " " << refTS_xlist[i][2]*10 << endl;
-    }
-  wfile004.close();
-
+  calculate_rotation_rmsd( refR_align, mov_xlist, n_alignment, mov_com, movR_to_ref, rotmatR, &rmsdR  );
+  calculate_rotation_rmsd( refP_align, mov_xlist, n_alignment, mov_com, movP_to_ref, rotmatP, &rmsdP  );
+  calculate_rotation_rmsd( refTS_align, mov_xlist, n_alignment, mov_com, movTS_to_ref, rotmatTS, &rmsdTS  );
 
 /**
   cout << "Just called calculated_rotation_rmsd" << endl;
@@ -579,8 +672,211 @@ void Brahan::calculate(){
   cout << rotmatTS[0][0] << " " << rotmatTS[0][1] << " " << rotmatTS[0][2] << endl;
   cout << rotmatTS[1][0] << " " << rotmatTS[1][1] << " " << rotmatTS[1][2] << endl;
   cout << rotmatTS[2][0] << " " << rotmatTS[2][1] << " " << rotmatTS[2][2] << endl; 
-  cout << "rmsd " << rmsdTS << endl;
 */
+
+// Translate reference R by delta com
+  vector<Vector> reactant_pos;
+  reactant_pos.reserve(n_reactantatoms);// Vector with update of coordinates of reactant according to translation/rotation
+  vector<Vector> product_pos;
+  product_pos.reserve(n_productatoms);
+  vector<Vector> ts_pos;
+  ts_pos.reserve(n_tsatoms);
+  // move all coordinate of atom R, P , TS to origin and then translate by com of substrate
+  for(unsigned i=0;i< n_reactantatoms;i++)
+    {
+
+      double xreactant_pos= refreactant_pos[i][0] - refRalign_com[0];
+      double yreactant_pos= refreactant_pos[i][1] - refRalign_com[1];
+      double zreactant_pos= refreactant_pos[i][2] - refRalign_com[2];
+
+      reactant_pos[i][0]  = ( rotmatR[0][0]*( xreactant_pos ) + rotmatR[1][0]*( yreactant_pos ) + rotmatR[2][0]*( zreactant_pos )) + sub_com[0] ;
+      reactant_pos[i][1]  = ( rotmatR[0][1]*( xreactant_pos ) + rotmatR[1][1]*( yreactant_pos ) + rotmatR[2][1]*( zreactant_pos )) + sub_com[1] ;
+      reactant_pos[i][2]  = ( rotmatR[0][2]*( xreactant_pos ) + rotmatR[1][2]*( yreactant_pos ) + rotmatR[2][2]*( zreactant_pos )) + sub_com[2] ;
+
+
+      double xproduct_pos= refproduct_pos[i][0] - refPalign_com[0];
+      double yproduct_pos= refproduct_pos[i][1] - refPalign_com[1];
+      double zproduct_pos= refproduct_pos[i][2] - refPalign_com[2];
+
+      product_pos[i][0]  = ( rotmatP[0][0]*( xproduct_pos ) + rotmatP[1][0]*( yproduct_pos ) + rotmatP[2][0]*( zproduct_pos )) + sub_com[0] ;
+      product_pos[i][1]  = ( rotmatP[0][1]*( xproduct_pos ) + rotmatP[1][1]*( yproduct_pos ) + rotmatP[2][1]*( zproduct_pos )) + sub_com[1] ;
+      product_pos[i][2]  = ( rotmatP[0][2]*( xproduct_pos ) + rotmatP[1][2]*( yproduct_pos ) + rotmatP[2][2]*( zproduct_pos )) + sub_com[2] ;
+
+
+      double xts_pos= refts_pos[i][0] - refTSalign_com[0];
+      double yts_pos= refts_pos[i][1] - refTSalign_com[1];
+      double zts_pos= refts_pos[i][2] - refTSalign_com[2];
+
+      ts_pos[i][0]  = ( rotmatTS[0][0]*( xts_pos ) + rotmatTS[1][0]*( yts_pos ) + rotmatTS[2][0]*( zts_pos )) + sub_com[0] ;
+      ts_pos[i][1]  = ( rotmatTS[0][1]*( xts_pos ) + rotmatTS[1][1]*( yts_pos ) + rotmatTS[2][1]*( zts_pos )) + sub_com[1] ;
+      ts_pos[i][2]  = ( rotmatTS[0][2]*( xts_pos ) + rotmatTS[1][2]*( yts_pos ) + rotmatTS[2][2]*( zts_pos )) + sub_com[2] ;
+
+    }
+   
+/** save file to check alignment 
+  string  alignxyzfile = "mov_xlist-afteralign.xyz";
+ // ostringstream convertstep;
+ // convertstep << step;
+ // string xyzstep;
+  //xyzstep = convertstep.str() + xyzfile;
+  // cout << xyzstep << endl;
+  ofstream wfile0001;
+  //wfile001.open(xyzstep.c_str());
+  wfile0001.open(alignxyzfile.c_str());
+  wfile0001 << n_alignment << endl;
+  wfile0001 << "comment" << endl;
+  for (unsigned i=0; i < n_alignment; i++)
+    {
+      wfile0001<< params.R_atomName[refRalign_iIndex[i]]  << " " << std::fixed << std::setprecision(5) << mov_xlist[i][0]*10 << " " << mov_xlist[i][1]*10 << " " << mov_xlist[i][2]*10 << endl;
+    }
+  wfile0001.close();
+
+
+
+
+  double refR_afteralign[n_alignment][3]; // coordinate of referece reactant after alignment
+// rotate proline ring to alignment at orgin and print it to file refR-afteralign.xyz
+  for(unsigned i=0;i< n_alignment;i++)
+    {
+      
+      refR_afteralign[i][0]  = ( rotmatR[0][0]*(refR_align[i][0]) + rotmatR[1][0]*(refR_align[i][1]) + rotmatR[2][0]*(refR_align[i][2]) )  ;
+      refR_afteralign[i][1]  = ( rotmatR[0][1]*(refR_align[i][0]) + rotmatR[1][1]*(refR_align[i][1]) + rotmatR[2][1]*(refR_align[i][2]) )  ;
+      refR_afteralign[i][2]  = ( rotmatR[0][2]*(refR_align[i][0]) + rotmatR[1][2]*(refR_align[i][1]) + rotmatR[2][2]*(refR_align[i][2]) )  ;
+    }
+
+  ofstream wfile0002;
+  wfile0002.open("refR-afteralign.xyz");
+  wfile0002 << n_alignment << endl;
+  wfile0002 << "comment" << endl;
+  for (unsigned i=0; i < n_alignment; i++)
+    {
+      wfile0002 << params.R_atomName[refRalign_iIndex[i]]  << " " << std::fixed << std::setprecision(5) << refR_afteralign[i][0]*10 << " " << refR_afteralign[i][1]*10 << " " << refR_afteralign[i][2]*10 << endl;
+    }
+  wfile0002.close();
+
+
+
+//  int step = getStep();
+  double mov_coord[n_reactantatoms][3]; // new coordinate of substate
+  string  xyzfile = "traj-reactant.xyz";
+ // ostringstream convertstep;
+ // convertstep << step;
+  //string xyzstep;
+  //xyzstep = convertstep.str() + xyzfile;
+  // cout << xyzstep << endl;
+  ofstream wfile001;
+  //wfile001.open(xyzstep.c_str());
+  wfile001.open(xyzfile.c_str());
+  wfile001 << n_reactantatoms << endl;
+  wfile001 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      Vector i_pos = getPosition(i);
+      mov_coord[i][0] = i_pos[0];
+      mov_coord[i][1] = i_pos[1];
+      mov_coord[i][2] = i_pos[2];
+      wfile001<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << mov_coord[i][0]*10 << " " << mov_coord[i][1]*10 << " " << mov_coord[i][2]*10 << endl;
+    }
+  wfile001.close();
+
+  ofstream wfile002;
+  wfile002.open("newreactant-afteralign.xyz");
+  wfile002 << n_reactantatoms << endl;
+  wfile002 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      wfile002<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << reactant_pos[i][0]*10 << " " << reactant_pos[i][1]*10 << " " << reactant_pos[i][2]*10 << endl;
+    }
+  wfile002.close();
+
+  ofstream wfile004;
+  wfile004.open("newproduct-afteralign.xyz");
+  wfile004 << n_reactantatoms << endl;
+  wfile004 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      wfile004<< params.P_atomName[i] << " " << std::fixed << std::setprecision(5) << product_pos[i][0]*10 << " " << product_pos[i][1]*10 << " " << product_pos[i][2]*10 << endl;
+    }
+  wfile004.close();
+
+
+  ofstream wfile005;
+  wfile005.open("newts-afteralign.xyz");
+  wfile005 << n_reactantatoms << endl;
+  wfile005 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      wfile005<< params.TS_atomName[i] << " " << std::fixed << std::setprecision(5) << ts_pos[i][0]*10 << " " << ts_pos[i][1]*10 << " " << ts_pos[i][2]*10 << endl;
+    }
+  wfile005.close();
+
+
+  ofstream wfile003;
+  wfile003.open("traj-bind.xyz");
+  wfile003 << n_bindingatoms << endl;
+  wfile003 << "comment" << endl;
+
+  for (unsigned i= n_reactantatoms; i < n_reactantatoms+n_bindingatoms; ++i)
+    {
+      Vector bind_pos = getPosition(i); // coordinate of binding site atom i
+      wfile003<< params.bindSite_atomName[i-n_reactantatoms] << " " << std::fixed << std::setprecision(5) << bind_pos[0]*10 << " " << bind_pos[1]*10 << " " << bind_pos[2]*10 << endl;
+
+    }
+  wfile003.close();
+*/
+
+  // Save position of traj of each step to check the energy
+  //binding site + subsrate
+  string  xyzfile = "Rtraj.xyz";
+  ostringstream convertstep;
+  convertstep << step;
+  string xyzstep;
+  xyzstep = convertstep.str() + xyzfile;
+  // cout << xyzstep << endl;
+  ofstream wfile001;
+  wfile001.open(xyzstep.c_str());
+  wfile001 << n_reactantatoms << endl;
+  wfile001 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      Vector i_pos = getPosition(i);
+      	   wfile001<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << i_pos[0]*10 << " " << i_pos[1]*10 << " " << i_pos[2]*10 << endl; // write coordinate of substrate
+   
+    }
+
+  wfile001.close();
+
+  string  bxyzfile = "bindtraj.xyz";
+  string bxyzstep;
+  bxyzstep = convertstep.str() + bxyzfile;
+  ofstream wfile003;
+  wfile003.open(bxyzstep.c_str());
+  wfile003 << n_bindingatoms << endl;
+  wfile003 << "comment" << endl;
+
+
+  for (unsigned j=n_reactantatoms; j < n_reactantatoms+n_bindingatoms; j++)
+    {
+      Vector j_pos = getPosition(j);
+      wfile003<< params.bindSite_atomName[j-n_reactantatoms] << " " << std::fixed << std::setprecision(5) << j_pos[0]*10 << " " << j_pos[1]*10 << " " << j_pos[2]*10 << endl; // write coordinate of binding
+    }
+  wfile003.close();
+
+
+  string  Rxyzfile = "R.xyz";
+  string Rxyzstep;
+  Rxyzstep = convertstep.str() + Rxyzfile;
+  ofstream wfile002;
+  wfile002.open(Rxyzstep.c_str());
+  wfile002 << n_reactantatoms << endl;
+  wfile002 << "comment" << endl;
+  for (unsigned i=0; i < n_reactantatoms; i++)
+    {
+      wfile002<< params.R_atomName[i] << " " << std::fixed << std::setprecision(5) << reactant_pos[i][0]*10 << " " << reactant_pos[i][1]*10 << " " << reactant_pos[i][2]*10 << endl;
+    }
+  wfile002.close();
+
+
 // calculate energy
   double Coulomb_R = 0.0; // the Coulombic energy of reactant with binding site
   double Coulomb_P = 0.0; // the Coulombic energy of product with binding site
@@ -593,32 +889,38 @@ void Brahan::calculate(){
   double qjR = 0.0;
   double qjP = 0.0;
   double qjTS = 0.0;
-  unsigned n_bindingatoms = binding_atoms.size();
+  //unsigned n_bindingatoms = binding_atoms.size();
   /// loop over binding site atom
   for (unsigned i= n_reactantatoms; i < n_reactantatoms+n_bindingatoms; ++i)
     {
      ///loop over reactant atom
      Vector binding_pos = getPosition(i); // coordinate of binding site atom i
-     qi = params.bindSite_charge[i];
+     qi = params.bindSite_charge[i-n_reactantatoms];
      for (unsigned j=0; j < n_reactantatoms; ++j )
        { 
                  
 
          // calculate distance atom i and j (magnitude of Rij)
-         double Rx = binding_pos[0] - refR_xlist[j][0] ;
-         double Ry = binding_pos[1] - refR_xlist[j][1] ;
-         double Rz = binding_pos[2] - refR_xlist[j][2] ;
+         double Rx = binding_pos[0] - reactant_pos[j][0] ;
+         double Ry = binding_pos[1] - reactant_pos[j][1] ;
+         double Rz = binding_pos[2] - reactant_pos[j][2] ;
          double distR = sqrt(Rx*Rx + Ry*Ry + Rz*Rz) ;
+         // check the distance for PBC
+         //if (i == 176 && j == 0)
+         //{
+          // ofstream wdis("Distance.dat", ios::app);
+          // wdis << setw(8) << step << "binding atom " << setw(3) << params.bindSite_atomName[i-n_reactantatoms] <<" " << setw(4) << i-n_reactantatoms << " R atom  "<< setw(4) << j << " distance  " << setw(13) << distR  << endl;
+         //}
          // distance atom ref product and binding site
-         double Px = binding_pos[0] - refP_xlist[j][0] ;
-         double Py = binding_pos[1] - refP_xlist[j][1] ;
-         double Pz = binding_pos[2] - refP_xlist[j][2] ;
+         double Px = binding_pos[0] - product_pos[j][0] ;
+         double Py = binding_pos[1] - product_pos[j][1] ;
+         double Pz = binding_pos[2] - product_pos[j][2] ;
          double distP = sqrt(Px*Px + Py*Py + Pz*Pz) ;
        //  cout << "Px " << Px << "Py " << Py << "Pz " << Pz << "dist "<< distP << endl;
          // distance atom ref ts and binding site
-         double TSx = binding_pos[0] - refTS_xlist[j][0] ;
-         double TSy = binding_pos[1] - refTS_xlist[j][1] ;
-         double TSz = binding_pos[2] - refTS_xlist[j][2] ;
+         double TSx = binding_pos[0] - ts_pos[j][0] ;
+         double TSy = binding_pos[1] - ts_pos[j][1] ;
+         double TSz = binding_pos[2] - ts_pos[j][2] ;
          double distTS = sqrt(TSx*TSx + TSy*TSy + TSz*TSz) ;
       //   cout << "TSx " << TSx << "TSy " << TSy << "TSz " << TSz << "dist "<< distTS << endl;
          qjR = params.R_charge[j];     //qj = getCharge(j);
@@ -631,7 +933,7 @@ void Brahan::calculate(){
          Coulomb_TS += ((Ke*qi*qjP)/distTS) ; // the Coulombic energy of TS with binding site
         
          Coulomb_R += ((Ke*qi*qjTS)/distR) ; // the Coulombic energy of reactant with binding site
-        // cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
+ //        cout << "dist R " << distR << " distP " << distP <<  " distTS " << distTS << endl; 
          // calculate the Lennard Jones energy
          // V(LJ) = 4(Eij)(sigmaij^12/(Rij)^12 - sigmaij^6/(Rij)^6)
          if (LJ_rule==1)
@@ -679,16 +981,19 @@ void Brahan::calculate(){
 	   double Bij_TS = sqrt( Bi * Bj_TS ) ;
 
            LJ_TS += (Aij_TS/pow(distTS,12)) - (Bij_TS/pow(distTS,6))  ;
-           cout << " LJ defalt " << endl;    
          } 
-
        }
+
     }
-    cout << "Step " << step << endl;
-    cout << " CoulombR " << Coulomb_R << " LJ R " << LJ_R << endl;
-    cout << "CoulombP " << Coulomb_P << "LJ P " << LJ_P <<  endl;
-    cout << "CoulombTS " << Coulomb_TS <<  " LJ TS " << LJ_TS << endl;
+ 
+
+
+  ofstream wenergy("Energy.dat", ios::app);
+//  wenergy << "Step Coulomb(R) LJ(R) Coulomb(P) LJ(P) Coulomb(TS) LJ(TS)" << endl; 
+  wenergy << setw(8) << step << " " << setw(13) << Coulomb_R << " "<< setw(13) << LJ_R << " " << setw(13) << Coulomb_P << " " << setw(13) << LJ_P << " " << setw(13) << Coulomb_TS << " " << setw(13) << LJ_TS << endl;
+
   setValue(brahan_val);
+
 }
 //\endverbatim
 
