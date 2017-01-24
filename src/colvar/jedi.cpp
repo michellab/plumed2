@@ -206,6 +206,8 @@ bool jediparameters::readParams(string &parameters_file)
 	V_min = item;
       else if ( key == string("deltaV_min") )
 	deltaV_min = item;
+      else if ( key == string("grid_resolution") )
+               resolution = item;
       //else if ( key == string("deltaGP1") )
       //	deltaGP1 = item;
       //else if ( key == string("deltaGP2") )
@@ -233,7 +235,7 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "deltaV_max  = " << deltaV_max << endl;
   cout << "V_min  = " << V_min << endl;
   cout << "deltaV_min  = " << deltaV_min << endl;
-
+  cout << "grid_resolution = " << resolution << endl;
   //cout << "deltaGP1  = " << deltaGP1 << endl;
   //cout << "deltaGP2  = " << deltaGP2 << endl;
   return true;
@@ -485,9 +487,9 @@ pbc(true)
   // Work out grid resolution.
   // FIXME Here we ASSUME that all grid points are evenly spread and that we can infer their 
   // separation by computing the distance between the first TWO grid points.
-  double d2 = pow(grid_positions[1][0] - grid_positions[0][0],2) + pow(grid_positions[1][1] - grid_positions[0][1],2) + pow(grid_positions[1][2] - grid_positions[0][2],2);
+  //double d2 = pow(grid_positions[1][0] - grid_positions[0][0],2) + pow(grid_positions[1][1] - grid_positions[0][1],2) + pow(grid_positions[1][2] - grid_positions[0][2],2);
   //params.resolution = sqrt(d2);
-  params.resolution = 0.15; // JCN Nov 2016 FIXME: the 2 first grid points are not always adjacent. Better read this from plumed.dat or jedi.params?
+  //params.resolution = 0.15; // JCN Nov 2016 FIXME: the 2 first grid points are not always adjacent. Better read this from plumed.dat or jedi.params?
   double gmin_x=999999.0;
   double gmax_x=-99999.0;
   double gmin_y=999999.0;
