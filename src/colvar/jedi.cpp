@@ -40,12 +40,21 @@
 // Lapack needed for l2-mininum norm solution
 #include "../tools/lapack/lapack.h"
 
+// introducing openMP (OMP) parallelisation
+#ifdef _OPENMP
+    #include <omp.h>
+#else
+    #define omp_get_num_threads() 0
+    #define omp_get_thread_num() 0
+#endif
+
 typedef double real;
 
 using namespace std;
 
 namespace PLMD
 {
+
 namespace colvar
 {
 
@@ -138,6 +147,7 @@ jediparameters::jediparameters()
   deltaV_max = 0.0;
   V_min = 0.0;
   deltaV_min = 0.0;
+  resolution = 0.0;
  //deltaGP1 = 0.0;
   //deltaGP2 = 0.0;
 
@@ -207,7 +217,7 @@ bool jediparameters::readParams(string &parameters_file)
       else if ( key == string("deltaV_min") )
 	deltaV_min = item;
       else if ( key == string("grid_resolution") )
-               resolution = item;
+	resolution = item;
       //else if ( key == string("deltaGP1") )
       //	deltaGP1 = item;
       //else if ( key == string("deltaGP2") )
@@ -365,7 +375,7 @@ pbc(true)
   apolaratoms = apolar_pdb.getAtomNumbers();
   const std::vector<Vector> apolar_positions = apolar_pdb.getPositions();
   const std::vector<double> apolar_masses = apolar_pdb.getOccupancy();
-  cout << " apolaratoms has ? elements " << apolaratoms.size() << endl;  
+  cout << " apolaratoms has " << apolaratoms.size() << "  elements" << endl;  
 
   //Polar 
   //vector<AtomNumber> Polar;
@@ -377,7 +387,7 @@ pbc(true)
   polaratoms = polar_pdb.getAtomNumbers();
   const std::vector<Vector> polar_positions = polar_pdb.getPositions();
   const std::vector<double> polar_masses = polar_pdb.getOccupancy();
-  cout << " polaratoms has ? elements " << polaratoms.size() << endl;
+  cout << " polaratoms has " << polaratoms.size() << " elements" << endl;
 
   // Also compute the com of reference coordinates and save for future calcs
   double site_mass_tot=0.0;
@@ -472,7 +482,7 @@ pbc(true)
 	error("missing input file " + site_file );
       site_positions = site_pdb.getPositions();
     }
-  cout << " site_positions has ? elements " << site_positions.size() << endl;
+  cout << " site_positions has " << site_positions.size() << " elements" << endl;
 
   // Load up grid file
   PDB grid_pdb;
@@ -482,7 +492,7 @@ pbc(true)
   // Save in memory the reference coordinates of the grid points for future alignments
   //const std::vector<Vector>
   grid_positions = grid_pdb.getPositions();
-  cout << " grid_positions has ? elements " << grid_positions.size() << endl;
+  cout << " grid_positions has "<< grid_positions.size() << " elements" << endl;
 
   // Work out grid resolution.
   // FIXME Here we ASSUME that all grid points are evenly spread and that we can infer their 
@@ -539,7 +549,8 @@ pbc(true)
   // JM TODO: Check behavior CV init upon job restart.
   ofstream wfile;
   wfile.open(summary_file.c_str());
-  wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t MaxDerivIdx \t max_deriv_x \t max_deriv_y \t max_deriv_z \t MaxDerivIdx_* \t max_deriv_x* \t max_deriv_y* \t max_deriv_z* \t rmsd" << endl;
+  //wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t MaxDerivIdx \t max_deriv_x \t max_deriv_y \t max_deriv_z \t MaxDerivIdx_* \t max_deriv_x* \t max_deriv_y* \t max_deriv_z* \t rmsd" << endl;
+  wfile << "#step JEDI Vdrug_like Va Ha JEDI_avg JEDI_sd MaxDerivIdx max_deriv_x max_deriv_y max_deriv_z MaxDerivIdx_* max_deriv_x* max_deriv_y* max_deriv_z* rmsd" << endl;
   wfile.close();
 
   cout << "*** Completed initialisation JEDI collective variable" << endl;
@@ -831,6 +842,23 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
   return s;
  }
 
+ /*JCN Jan2017: Declaring variables needed to save the data in step n
+  and use them in step n+1 (to monitor behaviour)*/
+ 
+ // Deviations from the mean
+ double jedi_avg=0.; // average initialised at 0 to avoid if block
+ double jedi_avg_old=0.; // to update variance on the fly
+ double jedi_var=0.; // variance will apply sqrt later to obtain sd
+ double jedi_sd=0.;
+ int avg_count=0;
+ int avg_count_old=0;
+ 
+ // Derivatives step n-1
+ vector<double> d_Jedi_before_norm_vec;
+ vector<double> d_Jedi_before_dx_vec;
+ vector<double> d_Jedi_before_dy_vec;
+ vector<double> d_Jedi_before_dz_vec;
+ 
 // calculator
 void jedi::calculate(){
 
@@ -1192,6 +1220,22 @@ void jedi::calculate(){
 
   double Va = volume/params.V_max;
   double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);
+  
+  //JCN Jan2017: calculating average and standard deviation
+ 
+  mod = step % stride;
+  iszero = mod;
+  if (!iszero) 
+    {
+     avg_count_old=avg_count;
+     avg_count=avg_count+1;
+     jedi_avg_old=jedi_avg;
+     jedi_avg=(jedi_avg*avg_count_old+Jedi)/avg_count;
+     jedi_var=(jedi_var+(Jedi-jedi_avg_old)*(Jedi-jedi_avg))/avg_count; // According to S. Bosisio and J.D. Cook
+     jedi_sd=sqrt(jedi_var); // Need to check that this is correct
+     //cout << jedi_avg_old << " " << jedi_avg << " " << jedi_sd << endl;
+    }
+  
   setValue(Jedi);
 
   //cout << "Jedi score is " << Jedi <<  " sum_ai " << sum_activity << " Va " << Va << " Ha " << Ha << endl;
@@ -1213,22 +1257,13 @@ void jedi::calculate(){
 
   //cout << "@@@ Doing derivatives step " << step << endl;
 
-  vector<double> d_ai_xpj_vec;
-  d_ai_xpj_vec.reserve(size_grid);
-  vector<double> d_ai_ypj_vec;
-  d_ai_ypj_vec.reserve(size_grid);
-  vector<double> d_ai_zpj_vec;
-  d_ai_zpj_vec.reserve(size_grid);
-  vector<double> dij_vec;
-  dij_vec.reserve(size_grid);
-
   vector<double> d_Jedi_xpj_vec;
   d_Jedi_xpj_vec.reserve(n_apolarpolar);
   vector<double> d_Jedi_ypj_vec;
   d_Jedi_ypj_vec.reserve(n_apolarpolar);
   vector<double> d_Jedi_zpj_vec;
   d_Jedi_zpj_vec.reserve(n_apolarpolar);
-
+ 
   double sum_d_Jedi_xpj =0.0;
   double sum_d_Jedi_ypj =0.0;
   double sum_d_Jedi_zpj =0.0;
@@ -1237,14 +1272,23 @@ void jedi::calculate(){
   double sum_d_Jedi_torque_zpj=0.0;
 
   // JM Update derivative every x steps
-  // JM This should be dy default 1 unless
+  // JM This should be by default 1 unless
   // we come up with a good reason for not doing that
   int x =1;
   mod = step % x;
   iszero = mod;
-
+  #pragma omp parallel for schedule(dynamic)
   for ( unsigned j=0; j < n_apolarpolar ; j++)
     {
+     vector<double> d_ai_xpj_vec;
+     d_ai_xpj_vec.reserve(size_grid);
+     vector<double> d_ai_ypj_vec;
+     d_ai_ypj_vec.reserve(size_grid);
+     vector<double> d_ai_zpj_vec;
+     d_ai_zpj_vec.reserve(size_grid);
+     vector<double> dij_vec;
+     dij_vec.reserve(size_grid);
+
       double xj = getPosition(j)[0];
       double yj = getPosition(j)[1];
       double zj = getPosition(j)[2];
@@ -1840,7 +1884,55 @@ void jedi::calculate(){
       cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " ( " << pdb_idx << " ) " << d_Jedi_dx << " " << d_Jedi_dy << " " << d_Jedi_dz << endl;
       */
     }
-
+  
+  /* JCN Jan2017: Calculate the norm of the derivative and the difference 
+  in the norm and the angle with the derivative the step before*/
+  
+  d_Jedi_before_norm_vec.reserve(n_apolarpolar);
+  d_Jedi_before_dx_vec.reserve(n_apolarpolar);
+  d_Jedi_before_dy_vec.reserve(n_apolarpolar);
+  d_Jedi_before_dz_vec.reserve(n_apolarpolar);
+  
+  vector<double> d_Jedi_norm_vec;
+  d_Jedi_norm_vec.reserve(n_apolarpolar);
+  double cos_Angle;
+  vector<double> cos_Angle_vec;
+  cos_Angle_vec.reserve(n_apolarpolar);
+  double norm_diff;
+  vector<double> norm_diff_vec;
+  norm_diff_vec.reserve(n_apolarpolar);
+  
+  for (unsigned j=0; j < n_apolarpolar;j++)
+    {
+      double d_Jedi_norm=sqrt(pow(d_Jedi_xpj_vec[j],2.)+pow(d_Jedi_ypj_vec[j],2.)+pow(d_Jedi_zpj_vec[j],2.));
+      d_Jedi_norm_vec[j]=d_Jedi_norm;
+      if (step==0)
+         {
+          norm_diff=0.;
+          norm_diff_vec[j]=0;
+          cos_Angle=1.;
+          cos_Angle_vec[j]=1.;
+         }
+      else
+         {
+          norm_diff=d_Jedi_norm-d_Jedi_before_norm_vec[j];
+          norm_diff_vec[j]=norm_diff;
+          //cout << "Norm now and before for step " << step << " and atom " << j << ": " << d_Jedi_norm << " " << d_Jedi_before_norm_vec[j] << endl;
+          double dot_x=d_Jedi_xpj_vec[j]*d_Jedi_before_dx_vec[j];
+          double dot_y=d_Jedi_ypj_vec[j]*d_Jedi_before_dy_vec[j];
+          double dot_z=d_Jedi_zpj_vec[j]*d_Jedi_before_dz_vec[j];
+          double norm_prod=d_Jedi_norm*d_Jedi_before_norm_vec[j];
+          cos_Angle=(dot_x+dot_y+dot_z)/norm_prod;
+          cos_Angle_vec[j]=cos_Angle;
+         }
+      d_Jedi_before_norm_vec[j]=d_Jedi_norm;
+      d_Jedi_before_dx_vec[j]=d_Jedi_xpj_vec[j];
+      d_Jedi_before_dy_vec[j]=d_Jedi_ypj_vec[j];
+      d_Jedi_before_dz_vec[j]=d_Jedi_zpj_vec[j];
+    }  
+  
+  //ENDJCN Jan2017
+  
   //exit(0);
 
   mod = step % stride;
@@ -1853,7 +1945,8 @@ void jedi::calculate(){
     {
       ofstream wfile;
       wfile.open(summary_file.c_str(),std::ios_base::app);
-      wfile << std::setprecision(5) << step << " " << Jedi << " " << Vdrug_like << " " << Va << " " << Ha 
+      wfile << std::setprecision(5) << step << " " << Jedi << " " << Vdrug_like << " " << Va << " " << Ha
+            << " " << jedi_avg << " " << jedi_sd
 	    << " " << max_der_idx_raw << " " << max_d_Jedi_der_raw[0] << " " << max_d_Jedi_der_raw[1] << " " << max_d_Jedi_der_raw[2]  
 	    << " " << max_der_idx << " " << max_d_Jedi_der[0] << " " << max_d_Jedi_der[1] << " " << max_d_Jedi_der[2] 
 	    << " " << rmsd << endl;
@@ -1866,20 +1959,24 @@ void jedi::calculate(){
   //cout << " gridstride is " << gridstride << endl;
   if (!iszero)
     {
-      // Here for write oordinates of updated grid to a XYZ file
+      // Here we write coordinates of updated grid to a XYZ file
       // This can be used to check that the grid has been trans/roted correctly
       ofstream wfile;
+      string actifilename = "acti-step-";
       string gridfilename = "grid-step-";
+      string sitefilename = "site-step-";
       string tail;
       string s;
       stringstream out;
       out << step;
       s = out.str();
       tail.append(s);
-      //string tail2;
-      //tail2=tail;
-      //string gridfilename2;
-      //gridfilename2 = gridfilename;
+      string tail2;
+      string tail3;
+      tail2=tail; //bsite
+      tail3=tail; //activities
+      string gridfilename2;
+      gridfilename2 = gridfilename;
       tail.append(".dx");
       gridfilename.append(tail);
       wfile.open(gridfilename.c_str());
@@ -1949,8 +2046,8 @@ void jedi::calculate(){
 	    }
 	}
       wfile.close();
-      /* This writes xyz files
-      tail2.append(".xyz");
+      // JCN Mar2017: This writes xyz files for the grid and txt for the activities
+      tail2.append(".xyz"); // grid
       gridfilename2.append(tail2);
       //cout << gridfilename2 << endl;
       //exit(0);
@@ -1961,11 +2058,33 @@ void jedi::calculate(){
       for (unsigned i=0; i < size_grid; i++)
       	{
       	  wfile << "C " << std::fixed << std::setprecision(5) << grid_x[i]*10 << " " << grid_y[i]*10 << " " << grid_z[i]*10 << endl;
-      }
+        }
       wfile.close();
-      */
-    }
-
+      
+      //JCN Mar 2016 Printing site xyz files
+      sitefilename.append(s);
+      sitefilename.append(".xyz");
+      wfile.open(sitefilename.c_str());
+      wfile << n_apolarpolar << endl;
+      wfile << "comment" << endl;
+      for (unsigned i=0; i<n_apolarpolar; i++)
+        {
+          Vector xyz_pos=getPosition(i);
+          wfile << "C " << std::fixed << std::setprecision(5) << xyz_pos[0]*10 << " " << xyz_pos[1]*10 << " " << xyz_pos[2]*10 << endl;
+        }
+      wfile.close();
+      
+      //JCN Apr2017: printing activities in a text file
+      tail3.append(".txt"); // activities
+      actifilename.append(tail3);
+      wfile.open(actifilename.c_str());
+      for (unsigned i=0; i<size_grid; i++)
+        {
+         double ai = activity[i];
+	 wfile <<  std::fixed << std::setprecision(5) << ai << endl;
+        }
+      wfile.close();
+  }
   //Now check if should dump derivatives too//
   if (dumpderivatives > 0)
     {
@@ -1988,7 +2107,9 @@ void jedi::calculate(){
       tail.append(".xyz");
       derivfilename.append(tail);
       wfile.open(derivfilename.c_str());
-      wfile << "#j pdb_index d_Jedi_dx d_Jedi_dy d_Jedi_dz " << endl;
+      /*JCN Jan2017: adding code to print the norm of the derivative and the angle
+       of the derivative at step n with that at step n-1*/
+      wfile << "#j pdb_index d_Jedi_dx d_Jedi_dy d_Jedi_dz Norm norm_diff cosAngle" << endl;
       for (unsigned j=0; j < n_apolarpolar; j++)
 	{
 	  unsigned pdb_idx;
@@ -1998,7 +2119,8 @@ void jedi::calculate(){
 	    pdb_idx = polaratoms[j-n_apolar].index();
 	  wfile << std::fixed << std::setprecision(5) << j << " " << pdb_idx \
 		<< " " << d_Jedi_xpj_vec[j] << " " << d_Jedi_ypj_vec[j] << " " \
-		<< d_Jedi_zpj_vec[j] << endl;
+		<< d_Jedi_zpj_vec[j] << " " << d_Jedi_norm_vec[j] << " " << norm_diff_vec[j] << " " \
+                << cos_Angle_vec[j] << endl;
 	}
       wfile.close();
     }
