@@ -1198,6 +1198,11 @@ void jedi::calculate(){
     }
 
   //cout << "There are " << active_grid.size() << " active grid points " << endl;
+  /*
+   * Here we need a piece of code that gets rid of the inactive (a=0.) points and
+   * performs a space clustering of the rest of them. The score then would be that of the
+   * biggest pocket to begin with, but that's something that has to be revised.
+   */
   double sum_activity = volume;
   double sum_activity2 = sum_activity*sum_activity;
   volume *= Vg;//Equation 4 of the paper
