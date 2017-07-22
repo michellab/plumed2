@@ -273,6 +273,7 @@ private:
   int stride;//frequency of output (in timesteps) to summary file;
   int gridstride;//frequency of output (in timestep) of a grid file;
   int dumpderivatives;//frequency of output (in timestep) of JEDI derivatives;
+  int dumpgclust; //frequency of output (in timesteps) of grid clusters
   double delta;//width of Gaussians (currently not used in JEDI)
 
   //deprecated
@@ -303,6 +304,7 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("compulsory","SUMMARY","jedi_stats.dat","summary file jedi descriptor.");
   keys.add("compulsory","GRIDSTRIDE","100","frequency of output of jedi grid.");
   keys.add("optional", "DUMPDERIVATIVES","frequency of output of derivatives.");
+  keys.add("optional", "DUMPGCLUST","frequency of output of grid clusters.");
   //keys.add("compulsory","GRIDFOLDER","jedi-grids", "folder where jedi grids will be output.");
   //  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
   //  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
@@ -346,6 +348,14 @@ pbc(true)
     dumpderivatives=atoi(dumpderivatives_string.c_str());
   else
     dumpderivatives=-1;
+  string dumpgclust_string;
+  parse("DUMPGCLUST",dumpgclust_string);
+  if (dumpgclust_string.length() == 0) 
+    dumpgclust_string = "null";
+  if (dumpgclust_string != "null")
+    dumpgclust=atoi(dumpgclust_string.c_str());
+  else
+    dumpgclust=-1;
 
   //string gridstats_folder;
   //parse("GRIDFOLDER",gridstats_folder);
@@ -841,7 +851,80 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
     }
   return s;
  }
-
+ 
+ //JCN Jul2017: Clustering grid points
+ 
+ vector<vector<int> > cluster_gridpoints(vector<double> & grid_x, vector<double> & grid_y, vector<double> & grid_z, 
+                                         vector<double> & activity, double resolution, vector<int> & active_grid)
+ {
+     vector<vector<int> > clusters;
+     vector<int>  pocket;
+     vector<int> unclustered;
+     
+     while (active_grid.size()!=0)
+     {
+         for (unsigned i=0; i<active_grid.size(); i++) //erasing values while the loop is iterating fucks it up!
+          {
+             unsigned original_size=pocket.size();
+             if (pocket.size()==0)
+             {
+                 pocket.push_back(active_grid[i]);
+                 //active_grid.erase(active_grid.begin()+i);
+             }
+             else
+             {
+                 double d=99999999.;
+                 for (unsigned k=0; k<pocket.size(); k++)                 
+                 { 
+                     double xi=grid_x[active_grid[i]];
+                     double yi=grid_y[active_grid[i]];
+                     double zi=grid_z[active_grid[i]];
+                     
+                     double xk=grid_x[pocket[k]];
+                     double yk=grid_y[pocket[k]];
+                     double zk=grid_z[pocket[k]];
+                     
+                     double rx=xi-xk;
+                     double ry=yi-yk;
+                     double rz=zi-zk;
+                     
+                     //cout << rx << " " << ry << " " << rz << endl;
+                     
+                     double distance = sqrt(rx*rx+ry*ry+rz*rz);
+                     double diff=distance-resolution;
+                     //cout << distance << " " << resolution << " " << diff << endl;
+                     if (diff<0.0001) // Find a proper way to compare 
+                     {
+                         d=resolution;
+                         //cout << d << endl;
+                     }
+                 }
+                 
+                 if (d == resolution)
+                 {
+                     pocket.push_back(active_grid[i]);
+                     //active_grid.erase(active_grid.begin()+i);
+                     //cout << "clustering point " << active_grid[i]<< endl;
+                 }
+                 else
+                 {
+                     //cout << "saving for later " << active_grid[i] << endl;
+                 }
+             }
+             if (pocket.size() == original_size)
+             {
+                 unclustered.push_back(active_grid[i]);
+                 cout << "saving for later " << active_grid[i] << endl;
+             }
+          }
+     active_grid=unclustered;
+     unclustered.erase(unclustered.begin(),unclustered.begin()+unclustered.size());
+     clusters.push_back(pocket);
+     pocket.erase(pocket.begin(),pocket.begin()+pocket.size()); //empty the vector for the next iteration
+     }
+     
+     return clusters; 
+ }
  /*JCN Jan2017: Declaring variables needed to save the data in step n
   and use them in step n+1 (to monitor behaviour)*/
  
@@ -863,7 +946,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
 void jedi::calculate(){
 
   unsigned size_grid = grid_positions.size();
-  //vector<int> active_grid;// array with the index of active grid point (0 if inactive)
+  vector<int> active_grid;// array with the index of active grid point (0 if inactive)
   //double activity[size_grid];//array of activity scores for each grid point
   vector<double> activity;
   activity.reserve(size_grid);
@@ -1192,17 +1275,85 @@ void jedi::calculate(){
       //s_on_exposure[i] = 1.0;
       // This now gives the activity value from equation 5
       activity[i] = s_on_mind[i] * s_on_exposure[i] * grid_s_off_bsi[i];
-      volume += activity[i];
-      hydrophobicity_tot+=hydrophobicity_list[i]*activity[i];
+      if (activity[i]>0)
+      {
+       active_grid.push_back(i);
+      }
+      //volume += activity[i];
+      //hydrophobicity_tot+=hydrophobicity_list[i]*activity[i];
       //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
     }
 
-  //cout << "There are " << active_grid.size() << " active grid points " << endl;
+  cout << "There are " << active_grid.size() << " active grid points " << endl;
+  
+  vector<vector<int> > clusters = cluster_gridpoints(grid_x, grid_y, grid_z, activity, params.resolution, active_grid);
+  
+  // Putting some stuff in vectors (might not be necessary)
+  vector<double> activity_clusters;
+  activity_clusters.reserve(clusters.size());
+  vector<double> hydrophobicity_clusters;
+  hydrophobicity_clusters.reserve(clusters.size());
+  vector<double> jedi_clusters;
+  jedi_clusters.reserve(clusters.size());
+  
+  // Calculating the JEDI score of each cluster
+  
+  double max_jedi=0.;
+  double s_off_V=0.;
+  double s_on_V=0.;
+  double Vdrug_like=0.;
+  double Ha=0.;
+  double Va=0.;
+  double sum_activity=0.;
+  double sum_activity2=0.;
+  
+  for (unsigned k=0; k<clusters.size();k++)
+   {
+      double sum_activity=0.;
+      double hydrophobicity_tot=0.;
+      for (unsigned i=0; i<clusters[k].size();i++)
+       {
+        sum_activity += activity[clusters[k][i]];
+        hydrophobicity_tot += hydrophobicity_list[clusters[k][i]]*activity[clusters[k][i]];
+       }
+      activity_clusters.push_back(sum_activity);
+      hydrophobicity_clusters.push_back(hydrophobicity_tot);
+      double volume = sum_activity;
+      double sum_activity2 = sum_activity*sum_activity;
+      volume *= Vg;//Equation 4 of the paper
+      // ----------> "Drug-like" volume
+      double s_off_V = (s_off( 1.0, volume, params.V_max, params.deltaV_max));
+      double s_on_V = s_on( 1.0, volume, params.V_min, params.deltaV_min);
+      double Vdrug_like = s_off_V * s_on_V;
+      // JM Feb 2016. Error in paper. Equation 10 numerator needs to be multiplied by Vg to get units
+      double Ha;
+      if(volume > 0.)
+        Ha = hydrophobicity_tot*Vg/volume;//equation 10
+      else
+        Ha = 0.0;
+      //cout << "Va a volume Vmax b hydrophobicity constant " << endl;
+      //cout << Va << " " << a << " " << volume << " " << Vmax << " " << b << " " << hydrophobicity << " " << constant << endl;
+
+      //----------> JEDI SCORE
+      
+      double Va = volume/params.V_max;
+      double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);
+      
+      cout << Vdrug_like << " " << Va << " " << Ha << endl;
+      
+      //check if we got the max JEDI value so far
+      if (Jedi > max_jedi) max_jedi= Jedi;
+      
+      jedi_clusters.push_back(Jedi);
+   }
+  
+    for (unsigned k=0; k<clusters.size();k++)
+   {
+    cout << "cluster " << k << " has " << clusters[k].size() << " points, its activity is " << activity_clusters[k] << " and its JEDI score is " << jedi_clusters[k] << endl;
+   }
+  double Jedi = max_jedi;
+  //exit(1);
   /*
-   * Here we need a piece of code that gets rid of the inactive (a=0.) points and
-   * performs a space clustering of the rest of them. The score then would be that of the
-   * biggest pocket to begin with, but that's something that has to be revised.
-   */
   double sum_activity = volume;
   double sum_activity2 = sum_activity*sum_activity;
   volume *= Vg;//Equation 4 of the paper
@@ -1225,7 +1376,7 @@ void jedi::calculate(){
 
   double Va = volume/params.V_max;
   double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);
-  
+  */
   //JCN Jan2017: calculating average and standard deviation
  
   mod = step % stride;
@@ -1970,6 +2121,7 @@ void jedi::calculate(){
       string actifilename = "acti-step-";
       string gridfilename = "grid-step-";
       string sitefilename = "site-step-";
+      string clustfile = "cluster-";
       string tail;
       string s;
       stringstream out;
@@ -2090,6 +2242,38 @@ void jedi::calculate(){
         }
       wfile.close();
   }
+  
+  //JCN Jul2017: Dump grid clusters
+  mod = step % dumpgclust;
+  iszero = mod;
+  
+  if (!iszero)
+   {
+    for (unsigned k=0; k<clusters.size();k++)
+     {
+        string filename = "cluster-";
+        stringstream num;
+        num << k;
+        string number = num.str();
+        stringstream out;
+        out << step;
+        string outer=out.str();
+        filename.append(number);
+        filename.append("-step-");
+        filename.append(outer); 
+        filename.append(".xyz");
+        ofstream wfile;
+        wfile.open(filename.c_str());
+        wfile << clusters[k].size() << endl;
+        wfile << filename << endl;
+        for (unsigned i=0; i<clusters[k].size();i++)
+          {
+            wfile << "C " << std::fixed << std::setprecision(5) << grid_x[clusters[k][i]]*10 << " " << grid_y[clusters[k][i]]*10 << " " << grid_z[clusters[k][i]]*10 << endl;
+          }
+        wfile.close();
+     }
+   }
+  
   //Now check if should dump derivatives too//
   if (dumpderivatives > 0)
     {
