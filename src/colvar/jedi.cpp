@@ -34,6 +34,7 @@
 #include <ctime>
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 
 // Kabsch algorithm implementation
 #include "kabsch.h"
@@ -853,78 +854,87 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
  }
  
  //JCN Jul2017: Clustering grid points
- 
- vector<vector<int> > cluster_gridpoints(vector<double> & grid_x, vector<double> & grid_y, vector<double> & grid_z, 
-                                         vector<double> & activity, double resolution, vector<int> & active_grid)
- {
-     vector<vector<int> > clusters;
-     vector<int>  pocket;
-     vector<int> unclustered;
-     
-     while (active_grid.size()!=0)
-     {
-         for (unsigned i=0; i<active_grid.size(); i++) //erasing values while the loop is iterating fucks it up!
-          {
-             unsigned original_size=pocket.size();
-             if (pocket.size()==0)
-             {
-                 pocket.push_back(active_grid[i]);
-                 //active_grid.erase(active_grid.begin()+i);
+
+  vector<vector<int> > cluster_gridpoints(vector<double> & grid_x, vector<double> & grid_y, vector<double> & grid_z,
+                                          double resolution, vector<vector<int> > & clusters, int iter) 
+  {
+  int size_original = clusters.size();
+  vector<vector<int> > newClusters;
+  vector<int> grouped;
+  //double resolution2d=sqrt(2*(resolution*resolution)); // 3d stuff
+  //double resolution3d=sqrt(3*(resolution*resolution)); // 3d stuff
+  
+  for (int i = 0; i < clusters.size(); i++) {
+       vector<int>::iterator skipi;
+       vector<int >groupedi=grouped;
+       skipi = find(groupedi.begin(), groupedi.end(), i);
+       if (skipi != groupedi.end()) continue;
+           grouped.push_back(i);
+           vector<int> currClust = clusters[i];
+           for (int j = i+1 ; j < clusters.size(); j++) {
+               double d, d2, d3;
+               vector<int>::iterator skipj;
+               vector<int> groupedj=grouped;
+               skipj = find(groupedj.begin(), groupedj.end(), j);
+               if (skipj != groupedj.end()) continue;
+                   double r = 0.;
+                   for (unsigned k = 0; k < clusters[i].size(); k++) {
+                       for (unsigned l = 0; l < clusters[j].size(); l++) {
+                            double rx = grid_x[clusters[i][k]] - grid_x[clusters[j][l]];
+                            double ry = grid_y[clusters[i][k]] - grid_y[clusters[j][l]];
+                            double rz = grid_z[clusters[i][k]] - grid_z[clusters[j][l]];
+                            r = sqrt(rx*rx+ry*ry+rz*rz);
+                            d= r-resolution;
+                            //d2=r-resolution2d;
+                            //d3=r-resolution3d;
+                            
+                            if (d<0.001) break;
+                        }
+                        if (d<0.001) break;
+                    }
+                    if (d<0.001) {
+                        for (unsigned l = 0; l < clusters[j].size(); l++) {
+                            currClust.push_back(clusters[j][l]);
+                        }
+                        cout << "merging cluster "<< j << " into "<< i << endl;
+                        grouped.push_back(j);
+                    }
+                }
+                newClusters.push_back(currClust);
+            }
+  /*              
+  for (unsigned k=0; k<newClusters.size();k++)
+      {
+        cout << "cluster " << k << " has " << newClusters[k].size() << " points"<<endl;
+        for (unsigned i=0;i<newClusters[k].size();i++)
+            {
+             cout << newClusters[k][i] << " ";
              }
-             else
-             {
-                 double d=99999999.;
-                 for (unsigned k=0; k<pocket.size(); k++)                 
-                 { 
-                     double xi=grid_x[active_grid[i]];
-                     double yi=grid_y[active_grid[i]];
-                     double zi=grid_z[active_grid[i]];
-                     
-                     double xk=grid_x[pocket[k]];
-                     double yk=grid_y[pocket[k]];
-                     double zk=grid_z[pocket[k]];
-                     
-                     double rx=xi-xk;
-                     double ry=yi-yk;
-                     double rz=zi-zk;
-                     
-                     //cout << rx << " " << ry << " " << rz << endl;
-                     
-                     double distance = sqrt(rx*rx+ry*ry+rz*rz);
-                     double diff=distance-resolution;
-                     //cout << distance << " " << resolution << " " << diff << endl;
-                     if (diff<0.0001) // Find a proper way to compare 
-                     {
-                         d=resolution;
-                         //cout << d << endl;
-                     }
-                 }
-                 
-                 if (d == resolution)
-                 {
-                     pocket.push_back(active_grid[i]);
-                     //active_grid.erase(active_grid.begin()+i);
-                     //cout << "clustering point " << active_grid[i]<< endl;
-                 }
-                 else
-                 {
-                     //cout << "saving for later " << active_grid[i] << endl;
-                 }
-             }
-             if (pocket.size() == original_size)
-             {
-                 unclustered.push_back(active_grid[i]);
-                 cout << "saving for later " << active_grid[i] << endl;
-             }
-          }
-     active_grid=unclustered;
-     unclustered.erase(unclustered.begin(),unclustered.begin()+unclustered.size());
-     clusters.push_back(pocket);
-     pocket.erase(pocket.begin(),pocket.begin()+pocket.size()); //empty the vector for the next iteration
-     }
-     
-     return clusters; 
- }
+             cout << endl;
+      }
+  */
+  int new_size = newClusters.size();
+  
+  cout << "--------------------------------"<<endl;
+  cout << "Iteration "<< iter << endl;
+  cout << "Original number of clusters: " << size_original << endl;
+  cout << "Current number of clusters: " << new_size << endl;
+  cout << "--------------------------------"<<endl;
+  
+  if (new_size != size_original) {
+      iter++;
+      return cluster_gridpoints(grid_x, grid_y,grid_z, resolution, newClusters,iter);
+
+ } else {
+      cout << "--------------------------------"<<endl;
+      cout << "exiting clustering function" << endl;
+      cout << "--------------------------------"<<endl;
+      //exit(0);
+      return newClusters;
+
+    }
+
+    }
  /*JCN Jan2017: Declaring variables needed to save the data in step n
   and use them in step n+1 (to monitor behaviour)*/
  
@@ -1286,7 +1296,17 @@ void jedi::calculate(){
 
   cout << "There are " << active_grid.size() << " active grid points " << endl;
   
-  vector<vector<int> > clusters = cluster_gridpoints(grid_x, grid_y, grid_z, activity, params.resolution, active_grid);
+  vector<vector<int> > clusters;
+  vector<int> cluster;
+  
+  for (unsigned i=0; i<active_grid.size();i++)
+    {
+     cluster.push_back(active_grid[i]);
+     clusters.push_back(cluster);
+     cluster.clear();
+    }
+  
+  clusters = cluster_gridpoints(grid_x, grid_y, grid_z, params.resolution, clusters,0);
   
   // Putting some stuff in vectors (might not be necessary)
   vector<double> activity_clusters;
@@ -1339,7 +1359,7 @@ void jedi::calculate(){
       double Va = volume/params.V_max;
       double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);
       
-      cout << Vdrug_like << " " << Va << " " << Ha << endl;
+      //cout << Vdrug_like << " " << Va << " " << Ha << endl;
       
       //check if we got the max JEDI value so far
       if (Jedi > max_jedi) max_jedi= Jedi;
