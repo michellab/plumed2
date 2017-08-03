@@ -861,8 +861,6 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
   int size_original = clusters.size();
   vector<vector<int> > newClusters;
   vector<int> grouped;
-  //double resolution2d=sqrt(2*(resolution*resolution)); // 3d stuff
-  //double resolution3d=sqrt(3*(resolution*resolution)); // 3d stuff
   
   for (int i = 0; i < clusters.size(); i++) {
        vector<int>::iterator skipi;
@@ -872,7 +870,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
            grouped.push_back(i);
            vector<int> currClust = clusters[i];
            for (int j = i+1 ; j < clusters.size(); j++) {
-               double d, d2, d3;
+               double d;
                vector<int>::iterator skipj;
                vector<int> groupedj=grouped;
                skipj = find(groupedj.begin(), groupedj.end(), j);
@@ -896,7 +894,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                         for (unsigned l = 0; l < clusters[j].size(); l++) {
                             currClust.push_back(clusters[j][l]);
                         }
-                        cout << "merging cluster "<< j << " into "<< i << endl;
+                        //cout << "merging cluster "<< j << " into "<< i << endl;
                         grouped.push_back(j);
                     }
                 }
@@ -914,22 +912,24 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       }
   */
   int new_size = newClusters.size();
-  
+  /*
   cout << "--------------------------------"<<endl;
   cout << "Iteration "<< iter << endl;
   cout << "Original number of clusters: " << size_original << endl;
   cout << "Current number of clusters: " << new_size << endl;
   cout << "--------------------------------"<<endl;
-  
+  */
   if (new_size != size_original) {
       iter++;
       return cluster_gridpoints(grid_x, grid_y,grid_z, resolution, newClusters,iter);
 
  } else {
+      /*
       cout << "--------------------------------"<<endl;
       cout << "exiting clustering function" << endl;
       cout << "--------------------------------"<<endl;
       //exit(0);
+       */
       return newClusters;
 
     }
