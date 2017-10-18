@@ -1959,8 +1959,15 @@ void jedi::calculate(){
     }
 
   // Occasionally save grids
-  mod = step % gridstride;
-  iszero = mod;
+  if (gridstride==0)
+     {
+      iszero=true; // not print them at all if gridstride is equal to 0
+     }
+  else
+     {
+      mod = step % gridstride;
+      iszero = mod;
+     }
   //cout << " gridstride is " << gridstride << endl;
   if (!iszero)
     {
