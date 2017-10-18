@@ -33,7 +33,7 @@ namespace bias{
 /*
  Applies a potential with the shape of an inverted gaussian:
  
- V=(1/(SIGMA*sqrt(2*pi)))*(1-exp(-((CV-AT)**2)/(2*(SIGMA**2))))
+ V=KAPPA*(1-exp(-((CV-AT)**2)/(2*(SIGMA**2))))
  
  This kind of potential is useful when the CV fluctuates a lot and harmonic
  potentials give forces too large for the integrator to handle
@@ -47,6 +47,7 @@ namespace bias{
 class INV_GAUSSIAN : public Bias{
   std::vector<double> at;
   std::vector<double> sigma;
+  std::vector<double> kappa;
 public:
   explicit INV_GAUSSIAN(const ActionOptions&);
   void calculate();
@@ -60,6 +61,7 @@ void INV_GAUSSIAN::registerKeywords(Keywords& keys){
   keys.use("ARG");
   keys.add("compulsory","AT","The average of the distribution");
   keys.add("compulsory","SIGMA","The standard deviation of the distribution");
+  keys.add("compulsory","KAPPA","Value at which the potential becomes flat");
   componentsAreNotOptional(keys);
   keys.addOutputComponent("bias","default","the instantaneous value of the bias potential");
   keys.addOutputComponent("force2","default","the instantaneous value of the squared force due to this bias potential");
@@ -73,6 +75,7 @@ sigma(getNumberOfArguments(),0.0)
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parseVector("SIGMA",sigma);
   parseVector("AT",at);
+  parseVector("KAPPA",kappa);
   checkRead();
 
   log.printf("  centered at");
@@ -83,6 +86,9 @@ sigma(getNumberOfArguments(),0.0)
   for(unsigned i=0;i<sigma.size();i++) log.printf(" %f",sigma[i]);
   log.printf("\n");
   
+  log.printf("  becoming flat at");
+  for(unsigned i=0;i<kappa.size();i++) log.printf(" %f",kappa[i]);
+  log.printf("\n");
 
   addComponent("bias"); componentIsNotPeriodic("bias");
   addComponent("force2"); componentIsNotPeriodic("force2");
@@ -96,9 +102,10 @@ void INV_GAUSSIAN::calculate(){
       
     
     const double cv=difference(i,at[i],getArgument(i));
-    const double s=sigma[i];
+    //const double s=sigma[i];
+    //const double k=kappa[i];
     
-    ene=(1/(sigma[i]*sqrt(2*pi)))*(1-exp(-pow((cv-at[i]),2)/(2*pow(sigma[i],2))));
+    ene=kappa[i]*(1-exp(-pow((cv-at[i]),2)/(2*pow(sigma[i],2))));
             
     double f = (1/(pow(sigma[i],3)*sqrt(pi)))*exp(-pow((cv-at[i]),2)/(2*pow(sigma[i],2)))*(cv-at[i]);
     totf2 += f * f;
