@@ -1289,12 +1289,9 @@ void jedi::calculate(){
       {
        active_grid.push_back(i);
       }
-      //volume += activity[i];
-      //hydrophobicity_tot+=hydrophobicity_list[i]*activity[i];
-      //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
     }
 
-  cout << "There are " << active_grid.size() << " active grid points " << endl;
+  //cout << "There are " << active_grid.size() << " active grid points " << endl;
   
   vector<vector<int> > clusters;
   vector<int> cluster;
@@ -1373,30 +1370,7 @@ void jedi::calculate(){
    }
   double Jedi = max_jedi;
   //exit(1);
-  /*
-  double sum_activity = volume;
-  double sum_activity2 = sum_activity*sum_activity;
-  volume *= Vg;//Equation 4 of the paper
-  // ----------> "Drug-like" volume
-  double s_off_V = (s_off( 1.0, volume, params.V_max, params.deltaV_max));
-  double s_on_V = s_on( 1.0, volume, params.V_min, params.deltaV_min);
-  double Vdrug_like = s_off_V * s_on_V;
-  //cout << " volume " << volume << " Vdrug_like " << Vdrug_like << endl;
 
-  // JM Feb 2016. Error in paper. Equation 10 numerator needs to be multiplied by Vg to get units
-  double Ha;
-  if(volume > 0.)
-    Ha = hydrophobicity_tot*Vg/volume;//equation 10
-  else
-    Ha = 0.0;
-    //cout << "Va a volume Vmax b hydrophobicity constant " << endl;
-  //cout << Va << " " << a << " " << volume << " " << Vmax << " " << b << " " << hydrophobicity << " " << constant << endl;
-
-  //----------> JEDI SCORE
-
-  double Va = volume/params.V_max;
-  double Jedi=Vdrug_like*(params.alpha*Va + params.beta*Ha + params.gamma);
-  */
   //JCN Jan2017: calculating average and standard deviation
  
   mod = step % stride;
@@ -2130,8 +2104,15 @@ void jedi::calculate(){
     }
 
   // Occasionally save grids
-  mod = step % gridstride;
-  iszero = mod;
+  if (gridstride==0)
+     {
+      iszero=true; // not print them at all if gridstride is equal to 0
+     }
+  else
+     {
+      mod = step % gridstride;
+      iszero = mod;
+     }
   //cout << " gridstride is " << gridstride << endl;
   if (!iszero)
     {
@@ -2234,7 +2215,7 @@ void jedi::calculate(){
       wfile << "comment" << endl;
       for (unsigned i=0; i < size_grid; i++)
       	{
-      	  wfile << "C " << std::fixed << std::setprecision(5) << grid_x[i]*10 << " " << grid_y[i]*10 << " " << grid_z[i]*10 << endl;
+      	  wfile << "H " << std::fixed << std::setprecision(5) << grid_x[i]*10 << " " << grid_y[i]*10 << " " << grid_z[i]*10 << endl;
         }
       wfile.close();
       
@@ -2247,7 +2228,7 @@ void jedi::calculate(){
       for (unsigned i=0; i<n_apolarpolar; i++)
         {
           Vector xyz_pos=getPosition(i);
-          wfile << "C " << std::fixed << std::setprecision(5) << xyz_pos[0]*10 << " " << xyz_pos[1]*10 << " " << xyz_pos[2]*10 << endl;
+          wfile << "H " << std::fixed << std::setprecision(5) << xyz_pos[0]*10 << " " << xyz_pos[1]*10 << " " << xyz_pos[2]*10 << endl; //FIXME: should have the correct element
         }
       wfile.close();
       
@@ -2288,7 +2269,7 @@ void jedi::calculate(){
         wfile << filename << endl;
         for (unsigned i=0; i<clusters[k].size();i++)
           {
-            wfile << "C " << std::fixed << std::setprecision(5) << grid_x[clusters[k][i]]*10 << " " << grid_y[clusters[k][i]]*10 << " " << grid_z[clusters[k][i]]*10 << endl;
+            wfile << "H " << std::fixed << std::setprecision(5) << grid_x[clusters[k][i]]*10 << " " << grid_y[clusters[k][i]]*10 << " " << grid_z[clusters[k][i]]*10 << endl;
           }
         wfile.close();
      }
