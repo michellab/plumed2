@@ -251,7 +251,7 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "V_min  = " << V_min << endl;
   cout << "deltaV_min  = " << deltaV_min << endl;
   cout << "grid_resolution = " << resolution << endl;
-  cout << "d0 value for Clustering (cite Laio2014): " << dc << endl;
+  cout << "dc = " << dc << endl;
   //cout << "deltaGP1  = " << deltaGP1 << endl;
   //cout << "deltaGP2  = " << deltaGP2 << endl;
   return true;
@@ -862,7 +862,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
   {
     int gp;
     double rho;
-    double delta;
+    int cluster;
     int nnhd;
   };
   
@@ -877,14 +877,13 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                                           vector<double> & activity, double resolution, double dc) 
   {
       vector<vector4d> vec(active_grid.size()); //contains for each active grid point: index, rho, delta, nnhd (nearest neighbour of higher density)
-      cout<<"calculating rho"<< endl;
-        
+      //cout<<"calculating rho"<< endl;
+      
+      double dc2=dc*dc;
       for (unsigned i=0; i<active_grid.size();i++)
       {
           int gp_i=active_grid[i];
           vec[i].gp=gp_i;
-          double rho=0;
-          double dc2=dc*dc;
           /*
           // As the sum of the activities of their neighbours (with JEDI concept of neighbour))
           for (unsigned j=0; j<neighbors[gp_i].size();j++)
@@ -914,12 +913,10 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
           }
       }
       
-      cout << "sorting points according to rho" << endl;
+      //cout << "sorting points according to rho" << endl;
       sort(vec.begin(),vec.end(),mycmp);
 
-
-      
-      cout << "finding the nearest neighbor of higher density" << endl;
+      //cout << "finding the nearest neighbor of higher density" << endl;
       for (unsigned i=0; i<active_grid.size(); i++)
       {
           vec[i].nnhd=-1;
@@ -932,56 +929,109 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               double ry=grid_y[gp_i]-grid_y[gp_j];
               double rz=grid_z[gp_i]-grid_z[gp_j];
               double r2=rx*rx+ry*ry+rz*rz;
-              if (r2<mindist2)
+              if (r2<=mindist2)
               {
                   vec[i].nnhd=gp_j;
                   mindist2=r2;
               }
           }
       }
-      /*
+      
+      
       for (unsigned i=0; i<active_grid.size();i++)
       {
-          cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].delta << " " << vec[i].nnhd << endl;
+         // cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].cluster << " " << vec[i].nnhd << endl;
       }
-      */
-      cout << "assigning points to clusters" << endl;
+      //exit(0);
+      
+      //cout << "assigning points to clusters" << endl;
       vector<vector<int> > clusters_raw;
       int clustered_elements=0;
+      int nclust=0;
       for (unsigned i=0; i<active_grid.size();i++)
       {
+          clustered_elements++;
           if(vec[i].nnhd==-1)
           {
            vector<int> cluster_i;
            cluster_i.push_back(vec[i].gp);
+           vec[i].cluster=nclust;
+           nclust++;
            clusters_raw.push_back(cluster_i);
-           clustered_elements +=1;
            continue;
           }
-          for (unsigned j=0; j<clusters_raw.size();j++)
+          
+          for (unsigned j=0; j<i;j++)
           {
-              bool clustered=false;
-              for (unsigned k=0; k<clusters_raw[j].size();k++)
-              {
-                  int gp_k=clusters_raw[j][k];
-                  if(gp_k==vec[i].nnhd)
-                  {
-                     clusters_raw[j].push_back(vec[i].gp);
-                     clustered_elements +=1;
-                     clustered=true;
-                     break;
-                  }
-              }
-              if (clustered==true) break;
+              if (vec[i].nnhd!=vec[j].gp) continue;
+              //cout << vec[j].cluster << endl;
+              vec[i].cluster=vec[j].cluster;
+              clusters_raw[vec[i].cluster].push_back(vec[i].gp);
+              break;
           }
+           
       }
-      cout << "Number of clustered elements: " << clustered_elements << endl;
-      cout << "Total Number of elements: " << active_grid.size() << endl;
       
-      // Removing points in each cluster's h
+      
+      for (unsigned i=0; i<clusters_raw.size(); i++)
+      {
+          cout << "Cluster " << i << " has " << clusters_raw[i].size() << " elements." << endl;
+      }
       
       return clusters_raw;
       
+      /*
+      //cout << "Number of clustered elements: " << clustered_elements << endl;
+      //cout << "Total Number of elements: " << active_grid.size() << endl;
+      
+      //Finding border region and maximum density in border region
+      
+      vector<vector<int> > borders (clusters_raw.size());
+      vector<double> rho_b (clusters_raw.size());
+      
+      for (unsigned i=0; i<active_grid.size();i++) // for each cluster i
+      {
+          bool added_i=false;
+          int gp_i=vec[i].gp;
+          for (unsigned j=0; j<active_grid.size(); j++)
+          {
+              if (vec[i].cluster==vec[j].cluster) continue;
+              int gp_j=vec[j].gp;
+              double rx=grid_x[gp_i]-grid_x[gp_j];
+              double ry=grid_y[gp_i]-grid_y[gp_j];
+              double rz=grid_z[gp_i]-grid_z[gp_j];
+              double r2=rx*rx+ry*ry+rz*rz;
+              if (r2<dc2)
+              {
+                  borders[vec[i].cluster].push_back(i); // We add the row index so we can find the maximum density more easily
+                  if (vec[i].rho > rho_b[vec[i].cluster]) rho_b[vec[i].cluster]=vec[i].rho;
+                  break;
+              }
+          }
+      }
+    
+      for (unsigned i=0; i<borders.size();i++)
+      {
+          cout << "Cluster " << i << " has a border region of " << borders[i].size() << " elements and a maximum border density of: "<< rho_b[i] << endl;                  
+      }
+      
+      
+      vector<vector<int> > clusters (clusters_raw.size());
+      for (unsigned i=0; i<active_grid.size(); i++)
+      {
+          int gp_i=vec[i].gp;
+          int cluster_i=vec[i].cluster;
+          double rho_i=vec[i].rho;
+          if (rho_i > rho_b[cluster_i])
+          {
+              cout << vec[i].rho << " " << rho_b[cluster_i] << endl;
+              continue;
+          }
+          clusters[cluster_i].push_back(gp_i);
+      }
+      
+      return clusters;
+      */
   }
  /*JCN Jan2017: Declaring variables needed to save the data in step n
   and use them in step n+1 (to monitor behaviour)*/
@@ -2306,7 +2356,7 @@ void jedi::calculate(){
         ofstream wfile;
         wfile.open(filename.c_str());
         wfile << clusters[k].size() << endl;
-        wfile << filename << endl;
+        wfile << jedi_clusters[k] << endl;
         for (unsigned i=0; i<clusters[k].size();i++)
           {
             wfile << "H " << std::fixed << std::setprecision(5) << grid_x[clusters[k][i]]*10 << " " << grid_y[clusters[k][i]]*10 << " " << grid_z[clusters[k][i]]*10 << endl;
