@@ -1324,6 +1324,7 @@ void jedi::calculate(){
 
       for( unsigned j = 0; j < n_apolarpolar; j++)
 	{
+         string el=getElement(j); 
 	  double rij[3];
 	  rij[0] = grd_x - getPosition(j)[0];
 	  rij[1] = grd_y - getPosition(j)[1];
