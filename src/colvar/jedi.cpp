@@ -900,7 +900,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               if (activity[gp_j]>0) vec[i].rho+=1;
           }
            */
-          // As the number of active points points within neighbouring distance
+          // As the number of active points points within dc
           for (unsigned j=0;j<active_grid.size();j++)
           {
               if (j==i) continue;
@@ -921,7 +921,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       {
           vec[i].nnhd=-1;
           int gp_i=vec[i].gp;
-          double mindist2=dc;
+          double mindist2=dc*dc;
           for (unsigned j=0; j<i; j++)
           {
               int gp_j=vec[j].gp;
@@ -937,13 +937,13 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
           }
       }
       
-      
+      /*
       for (unsigned i=0; i<active_grid.size();i++)
       {
-         // cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].cluster << " " << vec[i].nnhd << endl;
+          cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].cluster << " " << vec[i].nnhd << endl;
       }
-      //exit(0);
-      
+      exit(0);
+      */
       //cout << "assigning points to clusters" << endl;
       vector<vector<int> > clusters_raw;
       int clustered_elements=0;
@@ -1314,7 +1314,7 @@ void jedi::calculate(){
   double hydrophobicity_tot=0.0;
   //----------> Compute activity of grid points and also VOLUME
   for(unsigned i = 0; i < size_grid ; i++)
-    {
+    { 
       double sum = 0.;
       double grd_x = grid_x[i];
       double grd_y = grid_y[i];
@@ -1333,8 +1333,8 @@ void jedi::calculate(){
 	  double mod_rij2   = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
 	  if (mod_rij2 > cutoff2)
 	    continue;
-	  double mod_rij= sqrt(mod_rij2);
-	  if (mod_rij < min_modr)
+	  double mod_rij= sqrt(mod_rij2);  
+	  if (mod_rij < min_modr) 
 	      mod_rij = min_modr;
 	  //cout << "grd_x " << grd_x << " y " << grd_y << " z " << grd_z << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
 //      cout << " i " << i << " j " << j << " mod_rij " << mod_rij << endl;
@@ -1348,11 +1348,11 @@ void jedi::calculate(){
 	}
       if (sum < 0.0001)
 	{
-	  sum=exp(beta/cutoff);
+	sum=exp(beta/cutoff);
 	}
       sum_dist[i] = sum;
       double min_dist = beta/std::log(sum);
-      min_dist_list[i] = min_dist;
+      min_dist_list[i] = min_dist;      
       s_on_mind[i] = s_on( 1.0, min_dist, params.CC_mind, params.deltaCC);
       apolarity[i] = apolar;
       polarity[i] = polar;
@@ -1383,7 +1383,7 @@ void jedi::calculate(){
       //s_on_exposure[i] = 1.0;
       // This now gives the activity value from equation 5
       activity[i] = s_on_mind[i] * s_on_exposure[i] * grid_s_off_bsi[i];
-      if (activity[i]>0)
+      if (activity[i]>0.0)
       {
        active_grid.push_back(i);
       }
@@ -1413,7 +1413,7 @@ void jedi::calculate(){
   double Va=0.;
   double sum_activity=0.;
   double sum_activity2=0.;
-  
+
   for (unsigned k=0; k<clusters.size();k++)
    {
       double sum_activity=0.;
@@ -1450,7 +1450,7 @@ void jedi::calculate(){
       
       //check if we got the max JEDI value so far
       if (Jedi > max_jedi) max_jedi= Jedi;
-      
+
       jedi_clusters.push_back(Jedi);
    }
   
