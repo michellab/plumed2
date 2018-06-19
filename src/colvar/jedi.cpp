@@ -1456,7 +1456,7 @@ void jedi::calculate(){
   
     for (unsigned k=0; k<clusters.size();k++)
    {
-    cout << "cluster " << k << " has " << clusters[k].size() << " points, its activity is " << activity_clusters[k] << " and its JEDI score is " << jedi_clusters[k] << endl;
+    //cout << "cluster " << k << " has " << clusters[k].size() << " points, its activity is " << activity_clusters[k] << " and its JEDI score is " << jedi_clusters[k] << endl;
    }
   double Jedi = max_jedi;
   //exit(1);
