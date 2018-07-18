@@ -121,6 +121,8 @@ public:
   double resolution;
   double dc;
   double delta0;
+  double halo;
+  double superposition_min;
   //deprecated
   //double deltaGP1;
  //double deltaGP2;
@@ -153,6 +155,8 @@ jediparameters::jediparameters()
   resolution = 0.0;
   dc=0.0;
   delta0=0.0;
+  halo=0.0;
+  superposition_min=0.0;
  //deltaGP1 = 0.0;
   //deltaGP2 = 0.0;
 
@@ -227,6 +231,10 @@ bool jediparameters::readParams(string &parameters_file)
 	dc = item;
       else if ( key == string("delta0") )
         delta0=item;
+      else if ( key == string("halo") )
+        halo=item;
+      else if ( key == string("superposition_min") )
+        superposition_min=item;
       //else if ( key == string("deltaGP1") )
       //	deltaGP1 = item;
       //else if ( key == string("deltaGP2") )
@@ -257,6 +265,8 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "grid_resolution = " << resolution << endl;
   cout << "dc = " << dc << endl;
   cout << "delta0 = " << delta0 << endl;
+  cout << "halo = " << halo << endl;
+  cout << "superposition_min = " << superposition_min << endl;
   //cout << "deltaGP1  = " << deltaGP1 << endl;
   //cout << "deltaGP2  = " << deltaGP2 << endl;
   return true;
@@ -877,10 +887,8 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       return a.rho > b.rho;
   };
   
-  //JCN Jul2017: Clustering grid points
-  
   vector<vector<int> > cluster_gridpoints(vector<int> & active_grid, vector<vector<int> > & neighbors, vector<double> & grid_x, vector<double> & grid_y, vector<double> & grid_z,
-                                          vector<double> & activity, double resolution, double dc, double delta0) 
+                                          vector<double> & activity, double resolution, double dc, double delta0, double halo, double superposition_min) 
   {
       vector<vector5d> vec(active_grid.size()); //contains for each active grid point: index, rho, delta, nnhd (nearest neighbour of higher density)
       vector<vector<int> > clusters_raw;
@@ -890,35 +898,13 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       //cout << "entering parallel region"<<endl;
       #pragma omp parallel shared(vec,clusters_raw,clusters,rho_border,dc2)
       {
-      /*    
-      #pragma omp single
-      {
-          cout << "entering rho loop"<<endl;
-      }
-      */
-
+      // calculating density
       #pragma omp for
       for (unsigned i=0; i<active_grid.size();i++)
       {
           int gp_i=active_grid[i];
           vec[i].gp=gp_i;
-          /*
-          // As the sum of the activities of their neighbours (with JEDI concept of neighbour))
-          for (unsigned j=0; j<neighbors[gp_i].size();j++)
-          {
-              int gp_j=neighbors[gp_i][j];
-              vec[i].rho+=activity[gp_j];
-          }
-           */
-          /*
-          // As the total of active neighbours (with JEDI concept of neighbour))
-          for (unsigned j=0; j<neighbors[gp_i].size();j++)
-          {
-              int gp_j=neighbors[gp_i][j];
-              if (activity[gp_j]>0) vec[i].rho+=1;
-          }
-           */
-          // As the number of active points points within dc
+
           for (unsigned j=0;j<active_grid.size();j++)
           {
               if (j==i) continue;
@@ -927,44 +913,27 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               double ry=grid_y[gp_i]-grid_y[gp_j];
               double rz=grid_z[gp_i]-grid_z[gp_j];
               double r2=rx*rx+ry*ry+rz*rz;
-              if (r2<dc2) vec[i].rho+=1;
-              // The line below doesn't give better results
+              //if (r2<dc2) vec[i].rho+=1;
+              if (r2<dc2) vec[i].rho+=activity[gp_i];
               //if (r2<dc2) vec[i].rho+=activity[gp_j];
           }
       }
       
-      /*
-      // Just leaving this here so I don't try it again (doesn't work)
-      //EXPERIMENTAL: scaling densities with the activity of each point
-      for (unsigned i=0; i<active_grid.size(); i++)
-      {
-          int gp_i = vec[i].gp;
-          vec[i].rho*=activity[gp_i];
-      }
-       */
       #pragma omp single
       {
-      //cout << "sorting by rho"<<endl;
-      //cout << "sorting points according to rho" << endl;
       sort(vec.begin(),vec.end(),mycmp_rho);
       }
 
       //cout << "Calculating delta" << endl;
-      /*
-      #pragma omp single
-      {
-      cout << "entering delta loop"<<endl;
-      }
-       */
-
       #pragma omp for
       for (unsigned i=0; i<active_grid.size(); i++)
       {
-          vec[i].cluster=-1; // This is initialied at 0 but don't want random lonely points in cluster 0
+          vec[i].cluster=-1; // This is initialised at 0 but don't want random lonely points in cluster 0
           vec[i].nnhd=-1;
           int gp_i=vec[i].gp;
-          if (vec[i].rho==vec[0].rho) // This is/are the point/s with highest density. Their delta value is the distance with the furthest point.
+          if (i==0)
           {
+              //cout << "Point of maximum density: " << gp_i <<": " << vec[i].rho<<endl;
               double maxdist2=0.;
               for (unsigned j=i+1; j<active_grid.size();j++)
               {
@@ -975,7 +944,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                double r2=rx*rx+ry*ry+rz*rz;
                if (r2>=maxdist2)
                 {
-                 vec[i].nnhd=gp_i; // This can make the code crash if that point is not a cluster center!!
+                 vec[i].nnhd=gp_i;
                  vec[i].delta=sqrt(r2);
                  maxdist2=r2;
                 }
@@ -993,13 +962,14 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               double ry=grid_y[gp_i]-grid_y[gp_j];
               double rz=grid_z[gp_i]-grid_z[gp_j];
               double r2=rx*rx+ry*ry+rz*rz;
-              if (r2<mindist2)
+              if (r2<=mindist2)
               {
                   vec[i].nnhd=gp_j;
                   nnhd_rho=vec[j].rho;
                   vec[i].delta=sqrt(r2);
                   mindist2=r2;
               }
+              /*
               else if (r2==mindist2 and vec[j].rho>nnhd_rho)
               {
                   vec[i].nnhd=gp_j;
@@ -1007,22 +977,15 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                   vec[i].delta=sqrt(r2);
                   mindist2=r2;  
               }
+               */
             }
-            continue;
+            //continue;
           }
       }
-      
-      /*
-      for (unsigned i=0; i<active_grid.size();i++)
-      {
-          cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].cluster << " " << vec[i].nnhd << " " << vec[i].delta << endl;
-      }
-      //exit(0);
-      */
+       
       
       #pragma omp single
       {
-      //cout << "choosing centers"<<endl;
       //cout << "Choosing cluster centres" << endl;
       int nclust=0;
       for (unsigned i=0; i<active_grid.size();i++)
@@ -1034,29 +997,13 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               vec[i].cluster=nclust;
               rho_border.push_back(0);
               nclust++;
-              //cout <<"Cluster centre found at point: " << vec[i].gp << endl;
+              //cout <<"Cluster centre found at point: " << vec[i].gp << " whith density " << vec[i].rho << endl;
           }
       }
-      }
-      
-      /*
-      for (unsigned i=0; i<active_grid.size();i++)
-      {
-          cout << vec[i].gp << " " << vec[i].rho << " " << vec[i].cluster << " " << vec[i].nnhd << " " << vec[i].delta << endl;
-      }
-      //exit(0);
-      */       
-          
+               
       //cout << "assigning points to clusters" << endl;
       //cout << "found " << nclust << " cluster centers" << endl;
-      /*
-      #pragma omp single
-      {
-          cout << "assigning points to clusters_raw"<<endl;
-      }
-       */
 
-      #pragma omp single
       for (unsigned i=0; i<active_grid.size();i++)
       {
           if (vec[i].cluster != -1)
@@ -1077,51 +1024,81 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               }
           }
       }
+      }
       /*
       for (unsigned i=0; i<clusters_raw.size(); i++)
       {
           cout << "Cluster " << i << " has " << clusters_raw[i].size() << " elements." << endl;
       }
       //exit(0);
-      //return clusters_raw;
        */
-
-      // Find Border region and maximum density
       
-      /*
+      // Find Border region and maximum density
+      //# pragma omp single
+      //{
+       if (clusters_raw.size()>1)
+       {
+           
+         #pragma omp for
+         for (unsigned i=0; i<active_grid.size();i++)
+         {
+             //if (vec[i].rho==vec[vec[i].cluster].rho) continue; // do NOT do this for points that have the maximum density in the cluster
+             int gp_i=vec[i].gp;
+             for (unsigned j=i;j<active_grid.size();j++)
+             {
+                 if (j==i or vec[j].cluster==vec[i].cluster) continue;
+                 int gp_j=vec[j].gp;
+                 double rx=grid_x[gp_i]-grid_x[gp_j];
+                 double ry=grid_y[gp_i]-grid_y[gp_j];
+                 double rz=grid_z[gp_i]-grid_z[gp_j];
+                 double r2=rx*rx+ry*ry+rz*rz;
+                 if (r2>dc2) continue;
+                 #pragma omp critical
+                 {
+                  if (vec[j].rho > rho_border[vec[j].cluster]) rho_border[vec[j].cluster]=vec[j].rho;
+                  if (vec[i].rho > rho_border[vec[i].cluster]) rho_border[vec[i].cluster]=vec[i].rho;
+                 }
+             }
+         }
+       }
+       else
+       {
+        double delta2=delta0*delta0;
+        int gp_i=vec[0].gp;
+        #pragma omp single
+        {
+         cout << "Finding border region for just 1 cluster" << endl;   
+        }
+        #pragma omp for
+        for (unsigned j=1; j<active_grid.size();j++)
+        {
+         int gp_j=vec[j].gp;
+         double rx=grid_x[gp_i]-grid_x[gp_j];
+         double ry=grid_y[gp_i]-grid_y[gp_j];
+         double rz=grid_z[gp_i]-grid_z[gp_j];
+         double r2=rx*rx+ry*ry+rz*rz;
+         if (r2<=delta2) continue;
+         #pragma omp critical
+         {
+             if( vec[j].rho > rho_border[vec[j].cluster])
+             {
+              cout << "Found a new min_rho" << endl;
+              rho_border[vec[j].cluster]=vec[j].rho;  
+             }
+         }
+        }
+       }
+      //}
+      
       #pragma omp single
       {
-          cout << "findig border region"<<endl;
-      }
-       */
-
-      #pragma omp for
-      for (unsigned i=0; i<active_grid.size();i++)
-      {
-          int gp_i=vec[i].gp;
-          for (unsigned j=i;j<active_grid.size();j++)
-          {
-              if (j==i or vec[j].cluster==vec[i].cluster) continue;
-              int gp_j=vec[j].gp;
-              double rx=grid_x[gp_i]-grid_x[gp_j];
-              double ry=grid_y[gp_i]-grid_y[gp_j];
-              double rz=grid_z[gp_i]-grid_z[gp_j];
-              double r2=rx*rx+ry*ry+rz*rz;
-              if (r2>dc2) continue;
-              #pragma omp critical
-              {
-              if (vec[j].rho > rho_border[vec[j].cluster]) rho_border[vec[j].cluster]=vec[j].rho;
-              if (vec[i].rho > rho_border[vec[i].cluster]) rho_border[vec[i].cluster]=vec[i].rho;
-              }
-          }
-      }
-      
-      /*
       for (unsigned i=0; i<clusters_raw.size();i++)
       {
           cout << "Max border density for cluster " << i << " is " << rho_border[i] << endl;
       }
-       */
+      //exit(0);
+      }
+       
       
      #pragma omp single
       {
@@ -1141,7 +1118,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       #pragma omp single
       for (unsigned i=0; i<active_grid.size(); i++)
       {
-          if (vec[i].rho>=rho_border[vec[i].cluster]) clusters[vec[i].cluster].push_back(vec[i].gp);
+          if (vec[i].rho>=rho_border[vec[i].cluster]*halo) clusters[vec[i].cluster].push_back(vec[i].gp);
       }
       /*
       #pragma omp single
@@ -1155,7 +1132,8 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       //exit(0);
       }
       
-      return clusters_raw;
+      
+      return clusters;
   }
   /*JCN Jan2017: Declaring variables needed to save the data in step n
   and use them in step n+1 (to monitor behaviour)*/
@@ -1517,7 +1495,7 @@ void jedi::calculate(){
   
   vector<vector<int> > clusters;
   
-  clusters = cluster_gridpoints(active_grid,neighbors,grid_x,grid_y,grid_z,activity,params.resolution,params.dc,params.delta0);
+  clusters = cluster_gridpoints(active_grid,neighbors,grid_x,grid_y,grid_z,activity,params.resolution,params.dc,params.delta0,params.halo,params.superposition_min);
   
   // Putting some stuff in vectors (might not be necessary)
   vector<double> activity_clusters;
@@ -1601,7 +1579,7 @@ void jedi::calculate(){
      jedi_sd=sqrt(jedi_var); // Need to check that this is correct
      //cout << jedi_avg_old << " " << jedi_avg << " " << jedi_sd << endl;
     }
-  cout << "max JEDI = " << Jedi << endl;
+  //cout << "max JEDI = " << Jedi << endl;
   setValue(Jedi);
 
   //cout << "Jedi score is " << Jedi <<  " sum_ai " << sum_activity << " Va " << Va << " Ha " << Ha << endl;
