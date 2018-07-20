@@ -914,8 +914,8 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               double rz=grid_z[gp_i]-grid_z[gp_j];
               double r2=rx*rx+ry*ry+rz*rz;
               //if (r2<dc2) vec[i].rho+=1;
-              if (r2<dc2) vec[i].rho+=activity[gp_i];
-              //if (r2<dc2) vec[i].rho+=activity[gp_j];
+              //if (r2<dc2) vec[i].rho+=activity[gp_i];
+              if (r2<dc2) vec[i].rho+=activity[gp_j];
           }
       }
       
@@ -942,7 +942,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                double ry=grid_y[gp_i]-grid_y[gp_j];
                double rz=grid_z[gp_i]-grid_z[gp_j];
                double r2=rx*rx+ry*ry+rz*rz;
-               if (r2>=maxdist2)
+               if (r2>maxdist2)
                 {
                  vec[i].nnhd=gp_i;
                  vec[i].delta=sqrt(r2);
@@ -962,7 +962,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
               double ry=grid_y[gp_i]-grid_y[gp_j];
               double rz=grid_z[gp_i]-grid_z[gp_j];
               double r2=rx*rx+ry*ry+rz*rz;
-              if (r2<=mindist2)
+              if (r2<mindist2)
               {
                   vec[i].nnhd=gp_j;
                   nnhd_rho=vec[j].rho;
@@ -1052,7 +1052,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
                  double ry=grid_y[gp_i]-grid_y[gp_j];
                  double rz=grid_z[gp_i]-grid_z[gp_j];
                  double r2=rx*rx+ry*ry+rz*rz;
-                 if (r2>dc2) continue;
+                 if (r2>=dc2) continue;
                  #pragma omp critical
                  {
                   if (vec[j].rho > rho_border[vec[j].cluster]) rho_border[vec[j].cluster]=vec[j].rho;
@@ -1556,12 +1556,12 @@ void jedi::calculate(){
       jedi_clusters.push_back(Jedi);
    }
   
-  /*
+  
     for (unsigned k=0; k<clusters.size();k++)
    {
     cout << "cluster " << k << " has " << clusters[k].size() << " points, its activity is " << activity_clusters[k] << " and its JEDI score is " << jedi_clusters[k] << endl;
    }
-   */
+   
   double Jedi = max_jedi;
   //exit(1);
 
