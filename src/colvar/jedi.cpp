@@ -1067,7 +1067,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
         int gp_i=vec[0].gp;
         #pragma omp single
         {
-         cout << "Finding border region for just 1 cluster" << endl;   
+         //cout << "Finding border region for just 1 cluster" << endl;   
         }
         #pragma omp for
         for (unsigned j=1; j<active_grid.size();j++)
@@ -1082,7 +1082,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
          {
              if( vec[j].rho > rho_border[vec[j].cluster])
              {
-              cout << "Found a new min_rho" << endl;
+              //cout << "Found a new max_rho" << endl;
               rho_border[vec[j].cluster]=vec[j].rho;  
              }
          }
@@ -1094,7 +1094,7 @@ void center_grid( vector<Vector> &grid_positions, double grid_ref_cog[3] )
       {
       for (unsigned i=0; i<clusters_raw.size();i++)
       {
-          cout << "Max border density for cluster " << i << " is " << rho_border[i] << endl;
+          //cout << "Max border density for cluster " << i << " is " << rho_border[i] << endl;
       }
       //exit(0);
       }
@@ -1556,11 +1556,12 @@ void jedi::calculate(){
       jedi_clusters.push_back(Jedi);
    }
   
-  
+  /*
     for (unsigned k=0; k<clusters.size();k++)
    {
     cout << "cluster " << k << " has " << clusters[k].size() << " points, its activity is " << activity_clusters[k] << " and its JEDI score is " << jedi_clusters[k] << endl;
    }
+   */
    
   double Jedi = max_jedi;
   //exit(1);
