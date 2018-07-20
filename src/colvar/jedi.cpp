@@ -274,7 +274,20 @@ private:
   int gridstride;//frequency of output (in timestep) of a grid file;
   int dumpderivatives;//frequency of output (in timestep) of JEDI derivatives;
   double delta;//width of Gaussians (currently not used in JEDI)
-
+  struct vector2d
+  {
+    AtomNumber atom;
+    string polarity;
+    bool mycmp_atom (const vector2d& a, const vector2d& b)
+     {
+      return a.atom < b.atom;
+     };
+  };
+ 
+  bool mycmp_atom (const vector2d& a, const vector2d& b)
+     {
+      return a.atom < b.atom;
+     };
   //deprecated
   //string gridstats_folder;//path to output grid folder;
   //double n_grid;// total number of grid points (double)
@@ -453,18 +466,43 @@ pbc(true)
   //  cout << " i " << i << " alignmentatoms number " << alignmentatoms[i].serial() << endl;
 
   //vector<AtomNumber> allatoms( Apolar.size() + Polar.size() + alignmentatoms.size() );
-  vector<AtomNumber> allatoms( apolaratoms.size() + polaratoms.size() ); //+ alignmentatoms.size() );
+  
+  vector<vector2d> allatoms( apolaratoms.size() + polaratoms.size() ); //+ alignmentatoms.size() );
+  vector<AtomNumber> atomstoRequest(apolaratoms.size() + polaratoms.size());
 
   for ( unsigned i = 0; i < apolaratoms.size() ; ++i)
-    allatoms[i]=apolaratoms[i];
+  {
+    atomstoRequest[i]=apolaratoms[i];
+    allatoms[i].atom=apolaratoms[i];
+    allatoms[i].polarity='a';
+  }
 
   for ( unsigned i = 0; i < polaratoms.size() ; ++i)
-    allatoms[apolaratoms.size()+i] = polaratoms[i];
+  {
+    atomstoRequest[apolaratoms.size()+i]=polaratoms[i];
+    allatoms[apolaratoms.size()+i].atom = polaratoms[i];
+    allatoms[apolaratoms.size()+i].polarity = 'p';
+  }
 
    //for ( unsigned i=0; i < alignmentatoms.size() ; ++i)
    // allatoms[ apolaratoms.size() + polaratoms.size() + i ] = alignmentatoms[i];
+  
+  sort(atomstoRequest.begin(),atomstoRequest.end());
+  
+  sort(allatoms.begin(),allatoms.end(),mycmp_atom);
+  
+   // for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].atom << " ";
+  //cout << endl;
+  
+  for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].polarity << " ";
+  cout << endl;
+ 
+  //for (unsigned j=0; j<allatoms.size();j++) cout << atomstoRequest[j].atom << " ";
+  cout << endl;
 
-  requestAtoms(allatoms);
+  exit(0);
+  
+  requestAtoms(atomstoRequest);
 
   // FIXME set reference COM of binding site region
   // THIS CAN BE DONE BY DOING COM CALCULATION OVER DIFFERENT SET
