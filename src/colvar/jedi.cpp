@@ -251,7 +251,27 @@ bool jediparameters::readParams(string &parameters_file)
   return true;
 }
 
+struct AtomList
+{
+  AtomNumber atom;
+  char polarity;
+  double x;
+  double y;
+  double z;
+  AtomList(AtomNumber atom, char polarity,double x,double y,double z) 
+  {
+    this -> atom = atom;
+    this -> polarity = polarity;
+    this -> x = x;
+    this -> y = y;
+    this -> z = z;
+  }
+};
 
+bool mycmp_atom (const AtomList& a, const AtomList& b)
+{
+  return a.atom < b.atom;
+};
 
 class jedi : public Colvar
 {
@@ -260,6 +280,7 @@ private:
   //for JEDI
   vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
   vector<AtomNumber> polaratoms;//list of polar atoms used for CV
+  vector<AtomList> allatoms;// List of atom indices and apolar/polar values
   vector<Vector> ref_pos;// coordinates binding site at t_ref for alignment.
   double refsite_com[3];//reference coordinates of the center of mass of the binding site region
   double grid_ref_cog[3];//reference coordinates of the center of geometry of the grid at t_ref
@@ -274,8 +295,8 @@ private:
   int gridstride;//frequency of output (in timestep) of a grid file;
   int dumpderivatives;//frequency of output (in timestep) of JEDI derivatives;
   double delta;//width of Gaussians (currently not used in JEDI)
+  
  
-
   //deprecated
   //string gridstats_folder;//path to output grid folder;
   //double n_grid;// total number of grid points (double)
@@ -310,19 +331,6 @@ void jedi::registerKeywords(Keywords& keys)
   //keys.add("compulsory","REFERENCE","a file in pdb format containing the atoms to use for computing rotation matrices.");
 }
 
-  struct vector2d
-  {
-    AtomNumber atom;
-    char polarity;
-  };
-
-  bool mycmp_atom (const vector2d& a, const vector2d& b)
-     {
-      return a.atom < b.atom;
-     };
-     
-  vector<vector2d> allatoms;
-  
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true)
@@ -468,14 +476,21 @@ pbc(true)
 
   //vector<AtomNumber> allatoms( Apolar.size() + Polar.size() + alignmentatoms.size() );
   
-  allatoms.reserve(apolaratoms.size()+polaratoms.size()); //+ alignmentatoms.size() );
+  //vector<AtomList> allatoms(apolaratoms.size() + polaratoms.size());
   vector<AtomNumber> atomstoRequest(apolaratoms.size() + polaratoms.size());
+  for (unsigned j=0; j<(apolaratoms.size() + polaratoms.size());j++)
+  {
+      allatoms.push_back(AtomList(apolaratoms[0],'a',apolar_positions[0][0],apolar_positions[0][1],apolar_positions[0][2]));
+  }
 
   for ( unsigned i = 0; i < apolaratoms.size() ; ++i)
   {
     atomstoRequest[i]=apolaratoms[i];
     allatoms[i].atom=apolaratoms[i];
     allatoms[i].polarity='a';
+    allatoms[i].x=apolar_positions[i][0];
+    allatoms[i].y=apolar_positions[i][1];
+    allatoms[i].z=apolar_positions[i][2];
   }
 
   for ( unsigned i = 0; i < polaratoms.size() ; ++i)
@@ -483,24 +498,45 @@ pbc(true)
     atomstoRequest[apolaratoms.size()+i]=polaratoms[i];
     allatoms[apolaratoms.size()+i].atom = polaratoms[i];
     allatoms[apolaratoms.size()+i].polarity = 'p';
+    allatoms[apolaratoms.size()+i].x=polar_positions[i][0];
+    allatoms[apolaratoms.size()+i].y=polar_positions[i][1];
+    allatoms[apolaratoms.size()+i].z=polar_positions[i][2];
   }
-
-   //for ( unsigned i=0; i < alignmentatoms.size() ; ++i)
-   // allatoms[ apolaratoms.size() + polaratoms.size() + i ] = alignmentatoms[i];
+  /*  
+  cout << "atomstoRequest.size() = " << atomstoRequest.size()<<endl;
+  cout << "allatoms.size() = " << allatoms.size()<<endl;
+  cout << "---------------------------------------------" << endl;
   
-  //sort(atomstoRequest.begin(),atomstoRequest.end());
+  for (unsigned j=0; j<allatoms.size();j++)
+  {
+      cout << "Atom " << allatoms[j].atom.serial() << " " << allatoms[j].polarity << atomstoRequest[j].serial() << endl;
+  }
+  cout << "---------------------------------------------" << endl;
+  */
   
-  //sort(allatoms.begin(),allatoms.end(),mycmp_atom);
+  sort(atomstoRequest.begin(),atomstoRequest.end());
+  sort(allatoms.begin(),allatoms.end(),mycmp_atom);
   
-   // for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].atom << " ";
-  //cout << endl;
   
-  //for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].polarity << endl;
-
-  //exit(0);
+  for (unsigned i=0; i<allatoms.size();i++)
+  {
+    ref_pos[i][0]=allatoms[i].x;
+    ref_pos[i][1]=allatoms[i].y;
+    ref_pos[i][2]=allatoms[i].z;
+  }
   
+  /*
+  for (unsigned j=0; j<allatoms.size();j++)
+  {
+      cout << "Atom " << allatoms[j].atom.serial() << " " << allatoms[j].polarity << " " << atomstoRequest[j].serial() << endl;
+  }
+  cout << "---------------------------------------------" << endl;
+  */
+  
+  //exit();
+   
   requestAtoms(atomstoRequest);
-
+  
   // FIXME set reference COM of binding site region
   // THIS CAN BE DONE BY DOING COM CALCULATION OVER DIFFERENT SET
   // OF ATOMS (POLAR+APOLAR)
@@ -1005,6 +1041,8 @@ void jedi::calculate(){
       ref_xlist[i][0] = ref_pos[i][0];//FIXME change calculate_rotation_rmsd args to take directly vector in
       ref_xlist[i][1] = ref_pos[i][1];
       ref_xlist[i][2] = ref_pos[i][2];
+      //cout << ref_pos[i][0] << " " << ref_pos[i][1] << " " << ref_pos[i][2] <<endl;
+      //exit();
       Vector i_pos = getPosition( i );
       mov_xlist[i][0] = i_pos[0];
       mov_xlist[i][1] = i_pos[1];
@@ -1165,7 +1203,7 @@ void jedi::calculate(){
       double grd_z = grid_z[i];
       double apolar=0.0;
       double polar=0.0;
-
+     
       for( unsigned j = 0; j < n_apolarpolar; j++)
 	{
 	  double rij[3];
@@ -1183,6 +1221,7 @@ void jedi::calculate(){
 	  //cout << "grd_x " << grd_x << " y " << grd_y << " z " << grd_z << " jx " << getPosition(j)[0] << " jy " << getPosition(j)[1] << " jz " << getPosition(j)[2] << endl;
 //      cout << " i " << i << " j " << j << " mod_rij " << mod_rij << endl;
 	  // calculate mindist between grid points and protein atoms (EQUATION 5 2nd term)
+          //contact can be calculated BEFORE you know the activity if you then multiply it by activity[i] (difficult to see at the beginning)
 	  double contact = s_off( 1.0, mod_rij, params.r_hydro, params.deltar_hydro);
 	  if (allatoms[j].polarity=='a')
 	    apolar += contact;
