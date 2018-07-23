@@ -274,20 +274,8 @@ private:
   int gridstride;//frequency of output (in timestep) of a grid file;
   int dumpderivatives;//frequency of output (in timestep) of JEDI derivatives;
   double delta;//width of Gaussians (currently not used in JEDI)
-  struct vector2d
-  {
-    AtomNumber atom;
-    string polarity;
-    bool mycmp_atom (const vector2d& a, const vector2d& b)
-     {
-      return a.atom < b.atom;
-     };
-  };
  
-  bool mycmp_atom (const vector2d& a, const vector2d& b)
-     {
-      return a.atom < b.atom;
-     };
+
   //deprecated
   //string gridstats_folder;//path to output grid folder;
   //double n_grid;// total number of grid points (double)
@@ -301,7 +289,7 @@ public:
 };
 
 PLUMED_REGISTER_ACTION(jedi,"JEDI")
-
+    
 void jedi::registerKeywords(Keywords& keys)
 {
   Colvar::registerKeywords(keys);
@@ -322,6 +310,19 @@ void jedi::registerKeywords(Keywords& keys)
   //keys.add("compulsory","REFERENCE","a file in pdb format containing the atoms to use for computing rotation matrices.");
 }
 
+  struct vector2d
+  {
+    AtomNumber atom;
+    char polarity;
+  };
+
+  bool mycmp_atom (const vector2d& a, const vector2d& b)
+     {
+      return a.atom < b.atom;
+     };
+     
+  vector<vector2d> allatoms;
+  
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true)
@@ -467,7 +468,7 @@ pbc(true)
 
   //vector<AtomNumber> allatoms( Apolar.size() + Polar.size() + alignmentatoms.size() );
   
-  vector<vector2d> allatoms( apolaratoms.size() + polaratoms.size() ); //+ alignmentatoms.size() );
+  allatoms.reserve(apolaratoms.size()+polaratoms.size()); //+ alignmentatoms.size() );
   vector<AtomNumber> atomstoRequest(apolaratoms.size() + polaratoms.size());
 
   for ( unsigned i = 0; i < apolaratoms.size() ; ++i)
@@ -487,20 +488,16 @@ pbc(true)
    //for ( unsigned i=0; i < alignmentatoms.size() ; ++i)
    // allatoms[ apolaratoms.size() + polaratoms.size() + i ] = alignmentatoms[i];
   
-  sort(atomstoRequest.begin(),atomstoRequest.end());
+  //sort(atomstoRequest.begin(),atomstoRequest.end());
   
-  sort(allatoms.begin(),allatoms.end(),mycmp_atom);
+  //sort(allatoms.begin(),allatoms.end(),mycmp_atom);
   
    // for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].atom << " ";
   //cout << endl;
   
-  for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].polarity << " ";
-  cout << endl;
- 
-  //for (unsigned j=0; j<allatoms.size();j++) cout << atomstoRequest[j].atom << " ";
-  cout << endl;
+  //for (unsigned j=0; j<allatoms.size();j++) cout << allatoms[j].polarity << endl;
 
-  exit(0);
+  //exit(0);
   
   requestAtoms(atomstoRequest);
 
@@ -1187,7 +1184,7 @@ void jedi::calculate(){
 //      cout << " i " << i << " j " << j << " mod_rij " << mod_rij << endl;
 	  // calculate mindist between grid points and protein atoms (EQUATION 5 2nd term)
 	  double contact = s_off( 1.0, mod_rij, params.r_hydro, params.deltar_hydro);
-	  if (j < n_apolar)
+	  if (allatoms[j].polarity=='a')
 	    apolar += contact;
 	  else
 	    polar += contact;
