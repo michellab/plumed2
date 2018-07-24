@@ -1,21 +1,16 @@
 /* +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    Copyright (c) 2011-2014 The plumed team
    (see the PEOPLE file at the root of the distribution for a list of names)
-
    See http://www.plumed-code.org for more information.
-
    This file is part of plumed, version 2.
-
    plumed is free software: you can redistribute it and/or modify
    it under the terms of the GNU Lesser General Public License as published by
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
-
    plumed is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU Lesser General Public License for more details.
-
    You should have received a copy of the GNU Lesser General Public License
    along with plumed.  If not, see <http://www.gnu.org/licenses/>.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
@@ -77,17 +72,12 @@ double ds_on_dk(double k,double v,double v_min,double delta);
 //+PLUMEDOC COLVAR JEDI
 /*
 This file provides a template for if you want to introduce a new CV.
-
 <!-----You should add a description of your CV here---->
-
 The JEDI collective variable computes the druggability of a protein conformation. 
 Details about the methodology are given in 
 Cuchillo et al. JCTC 2015 J. Chem. Theory Comput., 11 (3), 1292-1307, 2015 doi:10.1021/ct501072t
-
 <!---You should put an example of how to use your CV here--->
-
 je: JEDI APOLAR=apolar.pdb POLAR=polar.pdb GRID=grid.pdb PARAMETERS=jedi.params STRIDE=1 SUMMARY=jedi_stats.dat GRIDSTRIDE=100 SIGMA=0.05
-
 */
 //+ENDPLUMEDOC
 
@@ -289,6 +279,7 @@ private:
   int grid_extent[3];//the number of grid points along each axis
   int grid_origin_idx;//the index of the grid point at the origin of the grid
   vector<double> grid_s_off_bsi;//binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
+  vector<Vector> site_positions; // Coordinates of the specified ligand (if any)
   jediparameters params;// parameters druggability estimator
   vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
   string summary_file;//path to output file
@@ -465,7 +456,6 @@ pbc(true)
   ref_com[0] /= ref_mass_tot;
   ref_com[1] /= ref_mass_tot;
   ref_com[2] /= ref_mass_tot;
-
   cout << " ref_com " << ref_com[0] << " " << ref_com[1] << " " << ref_com[2] << endl;
   */
 
@@ -547,7 +537,7 @@ pbc(true)
 
   // (Optional) If specified, load up site file
   PDB site_pdb;
-  std::vector<Vector> site_positions;
+  //std::vector<Vector> site_positions; Defined before;
   if ( site_file != string("null") )
     {
       if( !site_pdb.read(site_file,plumed.getAtoms().usingNaturalUnits(),0.1/atoms.getUnits().getLength()) )
@@ -641,6 +631,7 @@ vector<double> set_bs_values( vector<Vector> grid_pos,
     {
       grid_s_off_bsi.push_back(1.0);
     }
+  if (theta==0.) return grid_s_off_bsi;
 
   int n_site = site_pos.size();
   if (n_site > 0)
@@ -652,8 +643,8 @@ vector<double> set_bs_values( vector<Vector> grid_pos,
 	    {
 	      // Precompute first term eq 5 Cuchillo et al. JCTC 2015
 	      double dij2 = pow(grid_pos[i][0] - site_pos[j][0],2) +
-		pow(grid_pos[i][1] - site_pos[j][1],2) +
-		pow(grid_pos[i][2] - site_pos[j][2],2);
+		            pow(grid_pos[i][1] - site_pos[j][1],2) +
+		            pow(grid_pos[i][2] - site_pos[j][2],2);
 	      double dij = sqrt(dij2);
 	      sum = sum + exp(theta/dij);
 	    };
@@ -1265,11 +1256,30 @@ void jedi::calculate(){
       s_on_exposure[i]  = s_on( 1.0, exposure_score, params.Emin, params.deltaE);
       //cout << " i " << i << " neighbors " << neighbors_i.size() << " exposure " << exposure_score << " s_on_exposure " << s_on_exposure[i] << endl;
       //s_on_exposure[i] = 1.0;
-      // This now gives the activity value from equation 5
-      activity[i] = s_on_mind[i] * s_on_exposure[i] * grid_s_off_bsi[i];
-      volume += activity[i];
-      hydrophobicity_tot+=hydrophobicity_list[i]*activity[i];
+      // This now gives the activity value from equation 5 (lig_i multiplied later)
+      activity[i] = s_on_mind[i] * s_on_exposure[i];
       //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
+    }
+  if (site_positions.size()==0)
+     {
+      //cout << "Rescaling activities" << endl;
+      double max_act=1; // Here we are assuming that at least one point has activity 1, which might not be always true
+      for (unsigned i=0;i<size_grid;i++)
+      {
+          if (activity[i]==1) site_positions.push_back(grid_positions[i]);
+      }
+     grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
+     //for (unsigned i=0;i<size_grid;i++) cout << grid_s_off_bsi[i] << endl;
+     }
+     //cout << "grid has " << size_grid << " points"<<endl;
+     //cout << "site has " << site_positions.size() << " points"<<endl;
+  //exit();
+   // Rescale activities if necessary and calculate volume and hidrophobicity
+  for (unsigned i=0; i<size_grid; i++)
+    {
+     activity[i] *= grid_s_off_bsi[i];
+     volume += activity[i];
+     hydrophobicity_tot+=hydrophobicity_list[i]*activity[i];
     }
 
   //cout << "There are " << active_grid.size() << " active grid points " << endl;
