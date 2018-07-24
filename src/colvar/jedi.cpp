@@ -229,7 +229,7 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "alpha = " << alpha << endl;
   cout << "beta  = " << beta << endl;
   cout << "gamma = " << gamma << endl;
-  cout << "delta = " << theta << endl;
+  cout << "theta = " << theta << endl;
   cout << "CC_mind  = " << CC_mind << endl;
   cout << "deltaCC  = " << deltaCC << endl;
   cout << "Emin  = " << Emin << endl;
