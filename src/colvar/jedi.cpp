@@ -1594,7 +1594,7 @@ void jedi::calculate(){
 	  double deriv_z=d_Soffrij_m*(1/params.r_hydro)*d_rij_zpj+d_Soffrij_ai\
 	    *d_ai_zpj_vec[i];
 
-	  if (j < n_apolar)
+	  if (allatoms[j].polarity=='a')
 	    {
 	      d_polari_xpj=0.0;
 	      d_polari_ypj=0.0;
@@ -1740,10 +1740,13 @@ void jedi::calculate(){
       if (norm > max_norm_raw)
 	{
 	  max_norm_raw=norm;
-	  if (j < n_apolar)
+          max_der_idx_raw = allatoms[j].atom.index();
+          /*
+	  if (allatoms[j].polarity=='a')
 	    max_der_idx_raw = apolaratoms[j].index();
 	  else
 	    max_der_idx_raw = polaratoms[j-n_apolar].index();
+           */
 	  max_d_Jedi_der_raw[0] = d_Jedi_dx;
 	  max_d_Jedi_der_raw[1] = d_Jedi_dy;
 	  max_d_Jedi_der_raw[2] = d_Jedi_dz;
@@ -1946,10 +1949,13 @@ void jedi::calculate(){
       if (norm > max_norm)
 	{
 	  max_norm=norm;
-	  if (j < n_apolar)
+          max_der_idx = allatoms[j].atom.index();
+          /*
+	  if (j < allatoms[j].polarity=='a')
 	    max_der_idx = apolaratoms[j].index();
 	  else
 	    max_der_idx = polaratoms[j-n_apolar].index();
+           */
 	  max_d_Jedi_der[0] = d_Jedi_dx;
 	  max_d_Jedi_der[1] = d_Jedi_dy;
 	  max_d_Jedi_der[2] = d_Jedi_dz;
@@ -2198,11 +2204,13 @@ void jedi::calculate(){
       wfile << "#j pdb_index d_Jedi_dx d_Jedi_dy d_Jedi_dz Norm norm_diff cosAngle" << endl;
       for (unsigned j=0; j < n_apolarpolar; j++)
 	{
-	  unsigned pdb_idx;
-	  if (j < n_apolar)
+	  unsigned pdb_idx=allatoms[j].atom.index();
+          /*
+	  if (allatoms[j].polarity=='a')
 	    pdb_idx = apolaratoms[j].index();
 	  else
 	    pdb_idx = polaratoms[j-n_apolar].index();
+           */
 	  wfile << std::fixed << std::setprecision(5) << j << " " << pdb_idx \
 		<< " " << d_Jedi_xpj_vec[j] << " " << d_Jedi_ypj_vec[j] << " " \
 		<< d_Jedi_zpj_vec[j] << " " << d_Jedi_norm_vec[j] << " " << norm_diff_vec[j] << " " \
