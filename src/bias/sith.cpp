@@ -399,8 +399,8 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
 
 vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv)
 {
-   // if (typot=='HARMONIC')
-    //{
+    if (typot=="RESTRAINT")
+    {
         //Vector with potentials and forces
         vector<vector<double> > potfor;
         
@@ -438,7 +438,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
           {
               double dr_dcvj=(cv[j]-clusters[i].cvs[j])/r[i]; //derivative of the distance r_i with respect to the CV j (different at each cluster for a given CV)
               V_j += kappa[i]*pow((r[i]-at[i]),2);
-              F_j += 2*kappa[i]*(r[i]-at[i])*dr_dcvj;
+              F_j += -2*kappa[i]*(r[i]-at[i])*dr_dcvj;
           }
           V.push_back(V_j);
           F.push_back(F_j);
@@ -446,16 +446,65 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
         
         potfor.push_back(V);
         potfor.push_back(F);
-        return potfor;
-       
-    //}
-    /*
+        return potfor;  
+    }
+    else if (typot=="LOWER_WALLS")
+    {
+        //Vector with potentials and forces
+        vector<vector<double> > potfor;
+        
+        //get harmonic constants and zero values
+        vector<double> kappa; // Harmonic constant to push away from each cluster
+        vector<double> at;    // Equilibrium value of the harmonic restraint of each cluster, in the R space formed by all the CVs
+        vector<double> r;     // Distance from each cluster center in the R space formed by all CVs
+        
+        for (unsigned i=0; i<clusters.size();i++)
+        {
+            
+            double at2_i=0;
+            double r2_i=0;
+            for (unsigned j=0; j<cv.size();j++)
+            {
+                at2_i += pow((clusters[i].cvs[j]-clusters[i].sigma[j]),2);
+                r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
+            }
+            
+            double kappa_i=clusters[i].population;
+            kappa.push_back(kappa_i);
+            double at_i=sqrt(at2_i);
+            at.push_back(at_i);
+            double r_i=sqrt(r2_i);
+            r.push_back(r_i); 
+        }
+        
+        vector<double> V;
+        vector<double> F;
+        for (unsigned j=0;j<cv.size();j++)
+        {
+          double V_j=0;
+          double F_j=0;
+          for (unsigned i=0; i<clusters.size();i++)
+          {
+              double dr_dcvj=(cv[j]-clusters[i].cvs[j])/r[i]; //derivative of the distance r_i with respect to the CV j (different at each cluster for a given CV)
+              V_j += kappa[i]*pow((r[i]-at[i]-sqrt(pow((r[i]-at[i]),2))),2);
+              F_j += -2*kappa[i]*(r[i]-at[i]-sqrt(pow((r[i]-at[i]),2))) 
+                      *(1-(r[i]/sqrt(pow((r[i]-at[i]),2))))
+                      *dr_dcvj;
+          }
+          V.push_back(V_j);
+          F.push_back(F_j);
+        }
+        
+        potfor.push_back(V);
+        potfor.push_back(F);
+        return potfor;  
+    }
+    
     else
     {
      cout << "Biasing potential " << typot << " is not implemented. Check doc for available options."<< endl;
      exit(0);
     }
-     */
 }
 
 void SITH::calculate(){
