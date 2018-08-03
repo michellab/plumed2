@@ -80,6 +80,7 @@ class SITH : public Bias{
   int cvstride; // stride to print the value of the cvs in the file that will be read for clustering
   string sithfile; // The name of the file that will contain the clusters found at each sithstride (only write)
   string cvfile; // The name of the file that will contain the cvs involved in the taboo search (read+write)
+  string typot; // The type of potential we will use to bias
   
 public:
   explicit SITH(const ActionOptions&);
@@ -100,6 +101,7 @@ void SITH::registerKeywords(Keywords& keys){
   keys.add("compulsory","DELTA0","delta0 value for the clustering");
   keys.add("compulsory","SITHFILE","The name of the file that will contain the clusters found at each sithstride (only write)");
   keys.add("compulsory","CVFILE","The name of the file that will contain the cvs involved in the taboo search (read+write)");
+  keys.add("compulsory","TYPOT","The type of potential we will use to bias");
   componentsAreNotOptional(keys);
   keys.addOutputComponent("bias","default","the instantaneous value of the bias potential");
   keys.addOutputComponent("force2","default","the instantaneous value of the squared force due to this bias potential");
@@ -119,6 +121,7 @@ PLUMED_BIAS_INIT(ao)
   parse("DELTA0",delta0);
   parse("CVFILE",cvfile);
   parse("SITHFILE",sithfile);
+  parse("TYPOT",typot);
   checkRead();
    
   printf("Initialising SITH sampling protocol");
@@ -394,10 +397,83 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   return clusters_raw;
 }
 
+vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv)
+{
+   // if (typot=='HARMONIC')
+    //{
+        //Vector with potentials and forces
+        vector<vector<double> > potfor;
+        
+        //get harmonic constants and zero values
+        vector<double> kappa; // Harmonic constant to push away from each cluster
+        vector<double> at;    // Equilibrium value of the harmonic restraint of each cluster, in the R space formed by all the CVs
+        vector<double> r;     // Distance from each cluster center in the R space formed by all CVs
+        
+        for (unsigned i=0; i<clusters.size();i++)
+        {
+            
+            double at2_i=0;
+            double r2_i=0;
+            for (unsigned j=0; j<cv.size();j++)
+            {
+                at2_i += pow((clusters[i].cvs[j]-clusters[i].sigma[j]),2);
+                r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
+            }
+            
+            double kappa_i=clusters[i].population;
+            kappa.push_back(kappa_i);
+            double at_i=sqrt(at2_i);
+            at.push_back(at_i);
+            double r_i=sqrt(r2_i);
+            r.push_back(r_i); 
+        }
+        
+        vector<double> V;
+        vector<double> F;
+        for (unsigned j=0;j<cv.size();j++)
+        {
+          double V_j=0;
+          double F_j=0;
+          for (unsigned i=0; i<clusters.size();i++)
+          {
+              double dr_dcvj=(cv[j]-clusters[i].cvs[j])/r[i]; //derivative of the distance r_i with respect to the CV j (different at each cluster for a given CV)
+              V_j += kappa[i]*pow((r[i]-at[i]),2);
+              F_j += 2*kappa[i]*(r[i]-at[i])*dr_dcvj;
+          }
+          V.push_back(V_j);
+          F.push_back(F_j);
+        }
+        
+        potfor.push_back(V);
+        potfor.push_back(F);
+        return potfor;
+       
+    //}
+    /*
+    else
+    {
+     cout << "Biasing potential " << typot << " is not implemented. Check doc for available options."<< endl;
+     exit(0);
+    }
+     */
+}
+
 void SITH::calculate(){
   
+  // All this has to go here to initialise the bias at 0 for the first few steps
   int step=getStep();
   double time=getTime();
+  
+  const double pi=3.1415926535897;
+  double ene = 0.0;
+  double totf2 = 0.0;
+  double f=0.;
+  
+  vector<double> cv;
+  for(unsigned i=0;i<getNumberOfArguments();++i) cv.push_back(getArgument(i));
+  vector<double> potentials(getNumberOfArguments(),0);
+  vector<double> forces(getNumberOfArguments(),0);
+  
 
   //Check if values have to be printed in cvfile
   int mod = step % cvstride;
@@ -462,21 +538,23 @@ void SITH::calculate(){
       }
       clustfile.close();
      }
-   //exit(0);   
+     
+     //Update the biasing potentials and forces
+     vector<vector<double> > potfor=GenPot(typot,clusters,height,cv);
+     potentials=potfor[0];
+     forces=potfor[1];
+     //exit(0);   
   }
-  
-  const double pi=3.1415926535897;
-  double ene = 0.0;
-  double totf2 = 0.0;
-  double f=0.;
-  
+    
   for(unsigned i=0;i<getNumberOfArguments();++i) // It only iterates one time, but I still don't know how to 
   {
+    ene += potentials[i];
+    f=forces[i];
+    totf2 += f*f;
     setOutputForce(i,f);
   }
   getPntrToComponent("bias")->set(ene); 
   getPntrToComponent("force2")->set(totf2);  
 }
-//Close CVfile for writing
 }
 }
