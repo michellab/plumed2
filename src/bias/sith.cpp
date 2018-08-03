@@ -121,6 +121,7 @@ PLUMED_BIAS_INIT(ao)
   parse("SITHFILE",sithfile);
   checkRead();
    
+  printf("Initialising SITH sampling protocol");
   printf("The CVs are going to be printed every %i steps.\n", cvstride);
   printf("Clustering is going to be performed every %i steps.\n", sithstride);
   printf("The height of the gaussians will be rescaled by a factor of %f.\n", height);
@@ -139,6 +140,16 @@ PLUMED_BIAS_INIT(ao)
   }
   wfile << endl;
   wfile.close();
+  
+  ofstream clustfile;
+  clustfile.open(sithfile.c_str());
+  clustfile << "Time_print Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
+  for (int i=0; i<getNumberOfArguments();i++)
+  {
+   clustfile << "CV_" << i << " "; //How do you get the CV labels?
+  }
+  clustfile << endl;
+  clustfile.close();
   //exit(0);
 }
 
@@ -392,7 +403,6 @@ void SITH::calculate(){
   int mod = step % cvstride;
   if (mod==0)
   {
-   double time=getTime();
    ofstream wfile;
    wfile.open(cvfile.c_str(),std::ios_base::app);
    wfile << time << " ";
@@ -412,6 +422,7 @@ void SITH::calculate(){
      int mod = step % sithstride;
      if (mod==0)
      {
+         cout << "generating new SITH potentials at time = " << time << " ps (assuming you are doing stuff in ps)." << endl;
          //cout << "Reading the values in CV file: ";
          values_raw=getCVs(cvfile);
          //for (int i=0; i<values_raw.size();i++) cout << values_raw[i].time << endl;
@@ -436,6 +447,20 @@ void SITH::calculate(){
          }
          cout << "------------------------------------" << endl;
           */
+      // Print the cluster centers
+      ofstream clustfile;
+      clustfile.open(sithfile.c_str(),std::ios_base::app);
+      clustfile << "---------------------------------------------------------" << endl;
+      for (int i=0; i<clusters.size();i++)
+      {
+       clustfile << time << " " << clusters[i].time << " " << clusters[i].population << " ";
+       for (unsigned j=0; j<getNumberOfArguments(); j++)
+       {
+           clustfile << clusters[i].cvs[j] << " ";
+       }
+       clustfile << endl;
+      }
+      clustfile.close();
      }
    //exit(0);   
   }
