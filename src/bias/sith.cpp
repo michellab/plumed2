@@ -144,6 +144,11 @@ PLUMED_BIAS_INIT(ao)
   wfile << endl;
   wfile.close();
   
+  ofstream rhodelta;
+  rhodelta.open("rhodelta.txt");
+  rhodelta << "Rho Delta" << endl;
+  rhodelta.close();
+  
   ofstream clustfile;
   clustfile.open(sithfile.c_str());
   clustfile << "Time_print Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
@@ -295,6 +300,16 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
             }
           }
       }
+  }
+  
+  #pragma omp single
+  {
+    ofstream rhodelta;
+    rhodelta.open("rhodelta.txt",std::ios_base::app);
+    for (unsigned i=0; i<vec.size();i++)
+       {
+        rhodelta << vec[i].rho << " " << vec[i].delta << endl;
+       }
   }
   
   #pragma omp single
