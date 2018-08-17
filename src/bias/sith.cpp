@@ -73,7 +73,7 @@ class SITH : public Bias{
       }
   };
   
-  double height; // Factor that will multiply the height of the gaussians
+  double height; // Factor that will rescale he cluster populations (for bias/force generation))
   int sithstride; // Stride to perform the cv clustering and generate a new biasing potential
   double dc; // dc value for clustering (See Laio2014))
   double delta0; // delta0 value for clustering (see laio2014)
@@ -127,7 +127,7 @@ PLUMED_BIAS_INIT(ao)
   printf("Initialising SITH sampling protocol");
   printf("The CVs are going to be printed every %i steps.\n", cvstride);
   printf("Clustering is going to be performed every %i steps.\n", sithstride);
-  printf("The height of the gaussians will be rescaled by a factor of %f.\n", height);
+  printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
   printf("Please read and cite: Rodriguez, A.; Laio, A.; Science (2014) 344(6191) p.1496\n");
   
   //exit(0);
@@ -435,7 +435,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
                 r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
             }
             
-            double kappa_i=clusters[i].population;
+            double kappa_i=clusters[i].population*height;
             kappa.push_back(kappa_i);
             double at_i=sqrt(at2_i);
             at.push_back(at_i);
