@@ -484,7 +484,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
                 r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
             }
             
-            double kappa_i=clusters[i].population;
+            double kappa_i=clusters[i].population*height;
             kappa.push_back(kappa_i);
             double at_i=sqrt(at2_i);
             at.push_back(at_i);
