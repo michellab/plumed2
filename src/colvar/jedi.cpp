@@ -376,6 +376,13 @@ pbc(true)
 
   addValueWithDerivatives(); setNotPeriodic();
 
+  int nthreads;
+  #pragma omp parallel shared(nthreads) 
+  {
+      nthreads=omp_get_num_threads();
+  }
+  cout << "Running PLUMED with " << nthreads << " openMP threads" << endl;
+  
   cout << "*** Initialisation of JEDI collective variable ***" << endl;
 
   //Apolar
@@ -402,7 +409,7 @@ pbc(true)
   const std::vector<Vector> polar_positions = polar_pdb.getPositions();
   const std::vector<double> polar_masses = polar_pdb.getOccupancy();
   cout << " polaratoms has " << polaratoms.size() << " elements" << endl;
-
+  
   // Also compute the com of reference coordinates and save for future calcs
   double site_mass_tot=0.0;
   refsite_com[0] = 0.0;
