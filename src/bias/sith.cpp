@@ -75,6 +75,7 @@ class SITH : public Bias{
   
   double height; // Factor that will rescale he cluster populations (for bias/force generation))
   int sithstride; // Stride to perform the cv clustering and generate a new biasing potential
+  double sithstepsup; // number of steps over which the SITH bias is switched on
   double dc; // dc value for clustering (See Laio2014))
   double delta0; // delta0 value for clustering (see laio2014)
   int cvstride; // stride to print the value of the cvs in the file that will be read for clustering
@@ -95,6 +96,7 @@ void SITH::registerKeywords(Keywords& keys){
   Bias::registerKeywords(keys);
   keys.use("ARG");
   keys.add("compulsory","SITHSTRIDE","Frequency with which the snapshots are clustered and the bias is updated");
+  keys.add("compulsory","SITHSTEPSUP","number of steps over which the SITH bias is switched on");
   keys.add("compulsory","CVSTRIDE","Frequency with which the snapshots are clustered and the bias is updated");
   keys.add("compulsory","HEIGHT","Factor that scales the height of the gaussians");
   keys.add("compulsory","DC","dc value for the clustering");
@@ -116,6 +118,7 @@ PLUMED_BIAS_INIT(ao)
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parse("HEIGHT",height);
   parse("SITHSTRIDE",sithstride);
+  parse("SITHSTEPSUP",sithstepsup);
   parse("CVSTRIDE",cvstride);
   parse("DC",dc);
   parse("DELTA0",delta0);
@@ -484,7 +487,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
                 r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
             }
             
-            double kappa_i=clusters[i].population;
+            double kappa_i=clusters[i].population*height;
             kappa.push_back(kappa_i);
             double at_i=sqrt(at2_i);
             at.push_back(at_i);
@@ -603,8 +606,18 @@ void SITH::calculate(){
       clustfile.close();
      }
      
+     //Rescaling the bias to switch it on over sithstepsup steps
+     double resc;
+     if (sithstepsup!=0) resc=mod/sithstepsup;
+     else resc=1;
+     
+     double height_resc = height*resc;
+     
+     if (height_resc>1) height_resc=1.;
+     //cout << "Step = " << step <<", mod = " << mod << ", height= " << height << " sithstepsup= "<< sithstepsup << " height_resc= " << height_resc <<endl;
+     
      //Update the biasing potentials and forces
-     vector<vector<double> > potfor=GenPot(typot,clusters,height,cv);
+     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv);
      potentials=potfor[0];
      forces=potfor[1];
      //exit(0);   
