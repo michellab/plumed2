@@ -21,11 +21,21 @@
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 #include "Bias.h"
 #include "ActionRegister.h"
-#include <iostream>
-#include <fstream>
+#include "core/ActionSet.h"
+#include "tools/Grid.h"
+#include "core/PlumedMain.h"
+#include "core/Atoms.h"
+#include "tools/Exception.h"
+#include "core/FlexibleBin.h"
+#include "tools/Matrix.h"
+#include "tools/Random.h"
 #include <string>
 #include <cstring>
+#include "tools/File.h"
+#include <iostream>
+#include <limits>
 #include <iterator>
+#include <fstream>
 
 // introducing openMP (OMP) parallelisation
 #ifdef _OPENMP
@@ -82,6 +92,7 @@ class SITH : public Bias{
   string sithfile; // The name of the file that will contain the clusters found at each sithstride (only write)
   string cvfile; // The name of the file that will contain the cvs involved in the taboo search (read+write)
   string typot; // The type of potential we will use to bias
+  bool walkers_mpi;
   
 public:
   explicit SITH(const ActionOptions&);
@@ -104,6 +115,7 @@ void SITH::registerKeywords(Keywords& keys){
   keys.add("compulsory","SITHFILE","The name of the file that will contain the clusters found at each sithstride (only write)");
   keys.add("compulsory","CVFILE","The name of the file that will contain the cvs involved in the taboo search (read+write)");
   keys.add("compulsory","TYPOT","The type of potential we will use to bias");
+  keys.addFlag("WALKERS_MPI",false,"Switch on MPI version (only version available) of multiple walkers");
   componentsAreNotOptional(keys);
   keys.addOutputComponent("bias","default","the instantaneous value of the bias potential");
   keys.addOutputComponent("force2","default","the instantaneous value of the squared force due to this bias potential");
@@ -111,9 +123,10 @@ void SITH::registerKeywords(Keywords& keys){
 
 
 SITH::SITH(const ActionOptions&ao):
-PLUMED_BIAS_INIT(ao)
+PLUMED_BIAS_INIT(ao),
 //height(getNumberOfArguments(),0),
 //sithstride(getNumberOfArguments(),0)
+walkers_mpi(false)
 {
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parse("HEIGHT",height);
@@ -125,21 +138,46 @@ PLUMED_BIAS_INIT(ao)
   parse("CVFILE",cvfile);
   parse("SITHFILE",sithfile);
   parse("TYPOT",typot);
+  parseFlag("WALKERS_MPI",walkers_mpi);
   checkRead();
-   
-  printf("Initialising SITH sampling protocol");
-  printf("The CVs are going to be printed every %i steps.\n", cvstride);
-  printf("Clustering is going to be performed every %i steps.\n", sithstride);
-  printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
-  printf("Please read and cite: Rodriguez, A.; Laio, A.; Science (2014) 344(6191) p.1496\n");
+ 
+  int rank;
+  int nranks;
+  if(walkers_mpi) 
+  {
+      rank=multi_sim_comm.Get_rank();
+      nranks=multi_sim_comm.Get_size();
+      if (rank==0)
+      {
+        printf("Multiple walkers active using MPI communication\n");
+        cout << "Using " << nranks << " MPI ranks\n";
+      }
+      log.printf("Simulation corresponding to MPI rank %i.\n",rank);
+  }
+  else
+  {
+      rank=0;
+      nranks=1;
+      printf("No WALKERS_MPI\n");
+  }
   
   //exit(0);
+  
   addComponent("bias"); componentIsNotPeriodic("bias");
   addComponent("force2"); componentIsNotPeriodic("force2");
   
+  if (rank==0)
+  {
+   printf("Initialising SITH sampling protocol\n");
+   printf("The CVs are going to be printed every %i steps.\n", cvstride);
+   printf("Clustering is going to be performed every %i steps.\n", sithstride);
+   printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
+   printf("Please read and cite: Rodriguez, A.; Laio, A.; Science (2014) 344(6191) p.1496\n");   
+      
+      
   ofstream wfile;
   wfile.open(cvfile.c_str());
-  wfile << "Time ";
+  wfile << "Rank Time ";
   for (int i=0; i<getNumberOfArguments();i++)
   {
    wfile << "CV_" << i << " "; //How do you get the CV labels?
@@ -154,20 +192,21 @@ PLUMED_BIAS_INIT(ao)
   
   ofstream clustfile;
   clustfile.open(sithfile.c_str());
-  clustfile << "Time_print Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
+  clustfile << "Time_print Rank_clust Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
   for (int i=0; i<getNumberOfArguments();i++)
   {
    clustfile << "CV_" << i << " "; //How do you get the CV labels?
   }
   clustfile << endl;
   clustfile.close();
-  //exit(0);
+  }
 }
 
 
 //Data struct we will use to perform the clustering
  struct Laio
   {
+    int rank;
     int snapshot;
     double rho;
     int cluster;
@@ -183,12 +222,14 @@ PLUMED_BIAS_INIT(ao)
   
   //Data struct we will use to store the time, cv values, population and width of each cluster
   struct values {
+  int rank;
   double time;
   vector<double> cvs;
   int  population;
   vector<double> sigma;
-  values(double time,vector<double> cvs, int population, vector<double> sigma) 
+  values(int rank, double time,vector<double> cvs, int population, vector<double> sigma) 
     {
+      this -> rank = rank;
       this -> time = time;
       this -> cvs = cvs;
       this -> population = population;
@@ -209,19 +250,20 @@ vector<values> getCVs(string CV_file)
  string line;
  while (Tools::getline(fp, line))
  {
-  if (line[0] == 'T') continue;
+  if (line[0] == 'R') continue;
   istringstream iss(line);
   istream_iterator<string> beg(iss), end;
   vector<string> tokens(beg, end);
-  double time=atof(tokens[0].c_str()); 
+  int rank=atoi(tokens[0].c_str());
+  double time=atof(tokens[1].c_str());
   vector<double> cvs;
-  for (int i=1;i<tokens.size();i++)
+  for (int i=2;i<tokens.size();i++)
   {
       cvs.push_back(atof(tokens[i].c_str()));
   }
   int population=0;
   vector<double> sigma;
-  values_raw.push_back(values(time, cvs, population, sigma));
+  values_raw.push_back(values(rank,time, cvs, population, sigma));
  }
  //exit(0);
  return values_raw;
@@ -243,6 +285,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       for (int i=0; i<values_raw.size();i++)
       {
           vec[i].snapshot=i;
+          vec[i].rank=values_raw[i].rank;
           for (int j=0;j<values_raw.size();j++)
           {
               if (j==i) continue;
@@ -331,7 +374,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       if (vec[i].delta>delta0)
        {
           vec[i].cluster=nclust;
-          clusters_raw.push_back(values(t_center,cvs_center,pop,sig_center));
+          clusters_raw.push_back(values(vec[i].rank,t_center,cvs_center,pop,sig_center));
           nclust++;
        }
    }
@@ -339,7 +382,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   if (clusters_raw.size()==0) // in some cases delta0 can be so high that no clusters are found
    {
      vec[0].cluster=nclust;
-     clusters_raw.push_back(values(t_center,cvs_center,pop,sig_center));
+     clusters_raw.push_back(values(vec[0].rank,t_center,cvs_center,pop,sig_center));
    }
   
   
@@ -362,6 +405,8 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
          int pop = 1;
          //cout << "assigning time" << endl;
          clusters_raw[vec[i].cluster].time = values_raw[snap_center].time;
+         //cout << "assigning rank" << endl;
+         clusters_raw[vec[i].cluster].rank = values_raw[snap_center].rank;
          //cout << "assigning cvs" << endl;
          clusters_raw[vec[i].cluster].cvs = cvs_center;
          //cout << "assigning pop" << endl;
@@ -405,13 +450,14 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       if (clusters_raw[i].sigma[k]>0) clusters_raw[i].sigma[k]= abs(clusters_raw[i].sigma[k] - clusters_raw[i].cvs[k]);
     }
    }
-  /*
-    for (int i=0; i<values_raw.size();i++)
+  
+    /*for (int i=0; i<values_raw.size();i++)
       {
           cout << vec[i].snapshot << " " << vec[i].rho << " " << vec[i].delta << " " << vec[i].nnhd << " " << vec[i].cluster << endl;
-      }
-  */
+      }*/
+  
   }
+  //exit(0);
   return clusters_raw;
 }
 
@@ -528,9 +574,20 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
 void SITH::calculate(){
   
   // All this has to go here to initialise the bias at 0 for the first few steps
+  int rank;
+  if (walkers_mpi)
+  {
+   rank=multi_sim_comm.Get_rank();  
+  }
+  else
+  {
+   rank=0;   
+  }
+  
   int step=getStep();
   double time=getTime();
   
+
   const double pi=3.1415926535897;
   double ene = 0.0;
   double totf2 = 0.0;
@@ -546,9 +603,10 @@ void SITH::calculate(){
   int mod = step % cvstride;
   if (mod==0)
   {
+   // cvfile has: Rank, Time, cv_1, cv_2...
    ofstream wfile;
    wfile.open(cvfile.c_str(),std::ios_base::app);
-   wfile << time << " ";
+   wfile << rank << " " << time << " ";
    for (int i=0; i<getNumberOfArguments();i++)
    {
        double cv=getArgument(i);
@@ -560,6 +618,8 @@ void SITH::calculate(){
   
   
   // Clustering snapshots and generating new potentials if necessary
+  if (multi_sim_comm.Get_rank()==0)
+  {
   if (step>=sithstride)
   {   
      int mod = step % sithstride;
@@ -591,12 +651,13 @@ void SITH::calculate(){
          cout << "------------------------------------" << endl;
           */
       // Print the cluster centers
+      // Clustfile has: Time_print Rank_clust Time_clust Population, cv_1, cv_2...
       ofstream clustfile;
       clustfile.open(sithfile.c_str(),std::ios_base::app);
       clustfile << "---------------------------------------------------------" << endl;
       for (int i=0; i<clusters.size();i++)
       {
-       clustfile << time << " " << clusters[i].time << " " << clusters[i].population << " ";
+       clustfile << time << " " << clusters[i].rank << " " << clusters[i].time << " " << clusters[i].population << " ";
        for (unsigned j=0; j<getNumberOfArguments(); j++)
        {
            clustfile << clusters[i].cvs[j] << " ";
@@ -619,10 +680,15 @@ void SITH::calculate(){
      //Update the biasing potentials and forces
      vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv);
      potentials=potfor[0];
-     forces=potfor[1];
+     forces=potfor[1];             
      //exit(0);   
   }
-    
+  }
+  
+  // This brings the value of a variable from another rank (0 in this case)
+  multi_sim_comm.Bcast(potentials,0);
+  multi_sim_comm.Bcast(forces,0);  
+  
   for(unsigned i=0;i<getNumberOfArguments();++i) // It only iterates one time, but I still don't know how to 
   {
     ene += potentials[i];
