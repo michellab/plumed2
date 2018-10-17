@@ -269,6 +269,58 @@ vector<values> getCVs(string CV_file)
  return values_raw;
 }
 
+double optimise_dc(vector<values> & values_raw, double dc)
+{
+ double rho_avg=0;
+ double rho_inst=0;
+ double k=1.;
+ while (rho_avg<0.01*values_raw.size() or rho_avg>0.02*values_raw.size())
+ {
+    double dc2=dc*dc;
+    double r_avg=0;
+    #pragma omp parallel for reduction(+:rho_avg, r_avg)
+    for (int i=0; i<values_raw.size();i++)
+    {
+      for (int j=0;j<values_raw.size();j++)
+          {
+            if (j==i) continue;
+            double r2=0;
+            for (int k=0; k<values_raw[i].cvs.size();k++) 
+                r2=+pow((values_raw[j].cvs[k]-values_raw[i].cvs[k]),2);
+            r_avg += sqrt(r2);
+            if (r2<dc2) rho_avg+=1;
+          }
+    }
+    rho_avg /= values_raw.size();
+    r_avg /= values_raw.size();
+    //cout << "Average distance is " << r_avg << endl;
+    
+    if (((rho_inst<0.01*values_raw.size()) and (rho_avg>0.02*values_raw.size()))
+            or
+        ((rho_inst>0.02*values_raw.size()) and (rho_avg<0.01*values_raw.size())))
+    {
+             //cout << "decreasing k\n";
+             k=k/10;
+    }       
+    
+    //cout << "Average density with dc = " << dc << ": " << rho_avg << endl;
+    
+    if (rho_avg<0.01*values_raw.size())
+       {
+        rho_inst=rho_avg;
+        dc += k * r_avg;
+       }
+    else if (rho_avg>0.02*values_raw.size())
+       {
+        rho_inst=rho_avg;
+        dc -= k * r_avg;
+       }
+ }
+ //cout << "Average density: " << rho_avg << endl;
+ cout << "dc will be " << dc << endl;
+ return dc;
+}
+
 /////////////////////////////////////////////////////////
 // BEGINNING OF THE LAIO FUNCTION                      //
 /////////////////////////////////////////////////////////
@@ -279,7 +331,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   vector<values> clusters;
   double dc2=dc*dc;
   #pragma omp parallel shared(vec,clusters_raw,clusters,dc2)
-  {
+  {    
     //cout << "calculating density" << endl;
       #pragma omp for
       for (int i=0; i<values_raw.size();i++)
@@ -628,6 +680,8 @@ void SITH::calculate(){
          cout << "generating new SITH potentials at time = " << time << " ps (assuming you are doing stuff in ps)." << endl;
          //cout << "Reading the values in CV file: ";
          values_raw=getCVs(cvfile);
+         // Optimising dc
+         dc=optimise_dc( values_raw, dc);
          //for (int i=0; i<values_raw.size();i++) cout << values_raw[i].time << endl;
          //exit(0);
          //cout << "and performing the clustering to generate new biases" << endl;
