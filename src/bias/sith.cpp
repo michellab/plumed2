@@ -271,8 +271,8 @@ vector<values> getCVs(string CV_file)
 
 double optimise_dc(vector<values> & values_raw, double dc)
 {
- double rho_avg=0;
- double rho_inst=0;
+ int rho_avg=0;
+ int rho_inst=0;
  double k=1.;
  while (rho_avg<0.01*values_raw.size() or rho_avg>0.02*values_raw.size())
  {
@@ -292,20 +292,20 @@ double optimise_dc(vector<values> & values_raw, double dc)
           }
     }
     rho_avg /= values_raw.size();
-    r_avg /= values_raw.size();
-    //cout << "Average distance is " << r_avg << endl;
+    r_avg /= ((pow(values_raw.size(),2)-values_raw.size())/2);
+    cout << "Average distance is " << r_avg << endl;
     
     if (((rho_inst<0.01*values_raw.size()) and (rho_avg>0.02*values_raw.size()))
             or
         ((rho_inst>0.02*values_raw.size()) and (rho_avg<0.01*values_raw.size())))
     {
-             //cout << "decreasing k\n";
+             cout << "decreasing k\n";
              k=k/10;
     }       
     
-    //cout << "Average density with dc = " << dc << ": " << rho_avg << endl;
+    cout << "Average density with dc = " << dc << ": " << rho_avg << endl;
     
-    if (rho_avg<0.01*values_raw.size())
+    if (rho_avg<0.01*values_raw.size()) // Since we are comparing r2 to dc2, we need to check that sc didn't go below 0
        {
         rho_inst=rho_avg;
         dc += k * r_avg;
@@ -314,9 +314,14 @@ double optimise_dc(vector<values> & values_raw, double dc)
        {
         rho_inst=rho_avg;
         dc -= k * r_avg;
+        if (dc<0)
+        {
+         dc=0;
+         k=k/10;     
+        }
        }
  }
- //cout << "Average density: " << rho_avg << endl;
+ cout << "Average density: " << rho_avg << endl;
  cout << "dc will be " << dc << endl;
  return dc;
 }
