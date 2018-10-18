@@ -86,8 +86,9 @@ class SITH : public Bias{
   double height; // Factor that will rescale he cluster populations (for bias/force generation))
   int sithstride; // Stride to perform the cv clustering and generate a new biasing potential
   double sithstepsup; // number of steps over which the SITH bias is switched on
-  double dc; // dc value for clustering (See Laio2014))
-  double delta0; // delta0 value for clustering (see laio2014)
+  double dc; // dc value for clustering (See Laio2014) )
+  int dc_opt; //Frequency with which dc will be optimised
+  double delta0; // delta0 value for clustering (see laio2014)(if DC_OPT is specified, this is an initial guess)
   int cvstride; // stride to print the value of the cvs in the file that will be read for clustering
   string sithfile; // The name of the file that will contain the clusters found at each sithstride (only write)
   string cvfile; // The name of the file that will contain the cvs involved in the taboo search (read+write)
@@ -107,10 +108,11 @@ void SITH::registerKeywords(Keywords& keys){
   Bias::registerKeywords(keys);
   keys.use("ARG");
   keys.add("compulsory","SITHSTRIDE","Frequency with which the snapshots are clustered and the bias is updated");
-  keys.add("compulsory","SITHSTEPSUP","number of steps over which the SITH bias is switched on");
+  keys.add("optional","SITHSTEPSUP","number of steps over which the SITH bias is switched on");
   keys.add("compulsory","CVSTRIDE","Frequency with which the snapshots are clustered and the bias is updated");
-  keys.add("compulsory","HEIGHT","Factor that scales the height of the gaussians");
-  keys.add("compulsory","DC","dc value for the clustering");
+  keys.add("optional","HEIGHT","Factor that scales the height of the gaussians");
+  keys.add("compulsory","DC","dc value for the clustering (if DC_OPT is specified, this is an initial guess)");
+  keys.add("optional","DCOPT","Frequency with which dc will be optimised");
   keys.add("compulsory","DELTA0","delta0 value for the clustering");
   keys.add("compulsory","SITHFILE","The name of the file that will contain the clusters found at each sithstride (only write)");
   keys.add("compulsory","CVFILE","The name of the file that will contain the cvs involved in the taboo search (read+write)");
@@ -128,12 +130,16 @@ PLUMED_BIAS_INIT(ao),
 //sithstride(getNumberOfArguments(),0)
 walkers_mpi(false)
 {
+  sithstepsup=0;
+  height=1;
+  dc_opt=0;  
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parse("HEIGHT",height);
   parse("SITHSTRIDE",sithstride);
   parse("SITHSTEPSUP",sithstepsup);
   parse("CVSTRIDE",cvstride);
   parse("DC",dc);
+  parse("DCOPT",dc_opt);
   parse("DELTA0",delta0);
   parse("CVFILE",cvfile);
   parse("SITHFILE",sithfile);
@@ -171,7 +177,13 @@ walkers_mpi(false)
    printf("Initialising SITH sampling protocol\n");
    printf("The CVs are going to be printed every %i steps.\n", cvstride);
    printf("Clustering is going to be performed every %i steps.\n", sithstride);
-   printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
+   printf("with dc equal to %f and delta0 equal to %f.\n",dc,delta0);
+   if (dc_opt!=0) 
+       printf("dc will be optimised every %i steps.\n",dc_opt);
+   if (height!=1)
+       printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
+   if (sithstepsup!=0) 
+       printf("After clustering, the bias will be linearly switched on along %f steps.\n", sithstepsup);
    printf("Please read and cite: Rodriguez, A.; Laio, A.; Science (2014) 344(6191) p.1496\n");   
       
       
@@ -202,7 +214,7 @@ walkers_mpi(false)
   }
 }
 
-
+  
 //Data struct we will use to perform the clustering
  struct Laio
   {
@@ -293,7 +305,7 @@ double optimise_dc(vector<values> & values_raw, double dc)
     }
     rho_avg /= values_raw.size();
     r_avg /= ((pow(values_raw.size(),2)-values_raw.size())/2);
-    cout << "Average distance is " << r_avg << endl;
+    //cout << "Average distance is " << r_avg << endl;
     
     if (((rho_inst<0.01*values_raw.size()) and (rho_avg>0.02*values_raw.size()))
             or
@@ -389,11 +401,12 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
           double mindist2=99999999999999.;
           double nnhd_rho=0.;
           for (int j=0; j<i; j++)
-          {
+          {           
             int snap_j=vec[j].snapshot;
             double r2=0;
             for (int k=0; k<values_raw[i].cvs.size();k++) 
                 r2=+pow((values_raw[snap_j].cvs[k]-values_raw[snap_i].cvs[k]),2);
+            if (r2==0) break;
             if (r2<mindist2)
             {
                 vec[i].nnhd=snap_j;
@@ -469,6 +482,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
          //cout << "assigning pop" << endl;
          clusters_raw[vec[i].cluster].population = pop;
          //cout << "cluster center initialised" << endl;
+         clusters_raw[vec[i].cluster].sigma=clusters_raw[vec[i].cluster].cvs; // If we have a signelton as a cluster, the bias will start at a distance equal zero
         }
         else
         {
@@ -489,22 +503,24 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
                  r2 += pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
              }
              //cout << "r2 for cluster " << vec[j].cluster << "is " << r2 << endl;
-             if (r2>maxdist[vec[j].cluster])
+             if ((r2>maxdist[vec[j].cluster]) and (r2<=pow(delta0,2))) // This should help deal with the unavoidable misassignation
              {
               clusters_raw[vec[j].cluster].sigma=values_raw[snap_i].cvs;
+              maxdist[vec[j].cluster]=r2;
              }
            }
          
         }
     }
   }
-  //cout << Correcting the sigma of the gaussians
+  //cout << Correcting the sd of the clusters
   #pragma omp for
   for (unsigned i=0; i<clusters_raw.size();i++)
    {
     for (int k=0; k<clusters_raw[i].cvs.size();k++)
     {
-      if (clusters_raw[i].sigma[k]>0) clusters_raw[i].sigma[k]= abs(clusters_raw[i].sigma[k] - clusters_raw[i].cvs[k]);
+     if (isnan(clusters_raw[i].sigma[k]))
+         clusters_raw[i].sigma[k]=clusters_raw[i].cvs[k];
     }
    }
   
@@ -514,7 +530,17 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       }*/
   
   }
-  //exit(0);
+  /*
+  cout << "Found " << clusters_raw.size() << " Clusters" << endl;
+  for (unsigned i=0;i<clusters_raw.size();i++)
+  {
+      cout << "Cluster " << i << "Sigma: ";
+      for (unsigned j=0; j< clusters_raw[i].sigma.size();j++)
+          cout << clusters_raw[i].sigma[j] << ",";
+      cout << endl;
+  }
+  exit(0);
+   */
   return clusters_raw;
 }
 
@@ -644,7 +670,6 @@ void SITH::calculate(){
   int step=getStep();
   double time=getTime();
   
-
   const double pi=3.1415926535897;
   double ene = 0.0;
   double totf2 = 0.0;
@@ -686,7 +711,9 @@ void SITH::calculate(){
          //cout << "Reading the values in CV file: ";
          values_raw=getCVs(cvfile);
          // Optimising dc
-         dc=optimise_dc( values_raw, dc);
+         if ((dc_opt!=0) and ((step==sithstride) or (step%dc_opt)==0)) 
+             dc=optimise_dc(values_raw, dc);
+         //cout << "delta0 will be " << delta0_mod << endl;
          //for (int i=0; i<values_raw.size();i++) cout << values_raw[i].time << endl;
          //exit(0);
          //cout << "and performing the clustering to generate new biases" << endl;
