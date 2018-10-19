@@ -197,11 +197,6 @@ walkers_mpi(false)
   wfile << endl;
   wfile.close();
   
-  ofstream rhodelta;
-  rhodelta.open("rhodelta.txt");
-  rhodelta << "Rho Delta" << endl;
-  rhodelta.close();
-  
   ofstream clustfile;
   clustfile.open(sithfile.c_str());
   clustfile << "Time_print Rank_clust Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
@@ -218,11 +213,10 @@ walkers_mpi(false)
 //Data struct we will use to perform the clustering
  struct Laio
   {
-    int rank;
     int snapshot;
     double rho;
     int cluster;
-    unsigned nnhd;
+    int nnhd;
     double delta;
   };
   
@@ -343,218 +337,148 @@ double optimise_dc(vector<values> & values_raw, double dc)
 /////////////////////////////////////////////////////////
 vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double delta0)
 {
-  vector<Laio> vec(values_raw.size());
-  vector<values> clusters_raw;
-  vector<values> clusters;
-  double dc2=dc*dc;
-  #pragma omp parallel shared(vec,clusters_raw,clusters,dc2)
-  {    
-    //cout << "calculating density" << endl;
-      #pragma omp for
-      for (int i=0; i<values_raw.size();i++)
-      {
-          vec[i].snapshot=i;
-          vec[i].rank=values_raw[i].rank;
-          for (int j=0;j<values_raw.size();j++)
-          {
-              if (j==i) continue;
-              double r2=0;
-              for (int k=0; k<values_raw[i].cvs.size();k++) 
-                  r2=+pow((values_raw[j].cvs[k]-values_raw[i].cvs[k]),2);
-              if (r2<dc2) vec[i].rho+=1;
-          }
-      }
-  
-  
-  // Sorting vector by decreasing density 
-  #pragma omp single
-   {
-    sort(vec.begin(),vec.end(),mycmp_rho);
-   }
-  
-  //cout << "Calculating delta" << endl;
-  #pragma omp for
-  for (int i=0; i<values_raw.size(); i++)
-  {
-      vec[i].cluster=-1; // This is initialised at 0 but don't want random lonely points in cluster 0
-      vec[i].nnhd=-1;
-      int snap_i=vec[i].snapshot;
-      if (i==0)
-      {
-          double maxdist2=0.;
-          for (int j=1; j<values_raw.size();j++)
-          {
-           int snap_j=vec[j].snapshot;
-           double r2=0;
-           for (int k=0; k<values_raw[snap_i].cvs.size();k++) 
-              r2=+pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
-           if (r2>maxdist2)
-             {
-              //vec[i].nnhd=snap_i;
-              vec[i].delta=sqrt(r2);
-              maxdist2=r2;
-             }
-          }
-           continue;
-      }
-      else
-      {
-          double mindist2=99999999999999.;
-          //double nnhd_rho=0.;
-          for (int j=0; j<i; j++)
-          {           
-            int snap_j=vec[j].snapshot;
-            double r2=0;
-            for (int k=0; k<values_raw[i].cvs.size();k++) 
-                r2=+pow((values_raw[snap_j].cvs[k]-values_raw[snap_i].cvs[k]),2);
-            //if (r2==0) break;
-            if (r2<mindist2)
-            {
-                vec[i].nnhd=snap_j;
-                //nnhd_rho=vec[j].rho;
-                vec[i].delta=sqrt(r2);
-                mindist2=r2;
-            }
-          }
-      }
-  }
-  
-  #pragma omp single
-  {
-    ofstream rhodelta;
-    rhodelta.open("rhodelta.txt",std::ios_base::app);
-    for (unsigned i=0; i<vec.size();i++)
-       {
-        rhodelta << vec[i].rho << " " << vec[i].delta << endl;
-       }
-  }
-  
-  #pragma omp single
-  {
- // cout << "Generating an empty values struct" << endl;
-  double t_center=0.;
-  vector<double> cvs_center(values_raw[0].cvs.size(),0);
-  int pop=0.;
-  vector<double> sig_center(values_raw[0].cvs.size(),0);
-  
-  
-  //cout << "Choosing cluster centres" << endl;
-  int nclust=0;
-  for (unsigned i=0; i<values_raw.size();i++)
-   {
-      if (vec[i].delta>delta0)
-       {
-          vec[i].cluster=nclust;
-          clusters_raw.push_back(values(vec[i].rank,t_center,cvs_center,pop,sig_center));
-          nclust++;
-       }
-   }
-      
-  if (clusters_raw.size()==0) // in some cases delta0 can be so high that no clusters are found
-   {
-     vec[0].cluster=nclust;
-     clusters_raw.push_back(values(vec[0].rank,t_center,cvs_center,pop,sig_center));
-   }
-  
-  
-  //cout << "found " << nclust << " cluster centers" << endl;
-  //cout << "clusters_raw has " << clusters_raw.size() << " elements" << endl;
-   
-  //cout << "assigning points to clusters" << endl;
-  
-
-    vector<double> maxdist(clusters_raw.size(),0);
-    for (int i=0; i<values_raw.size();i++)
+    double dc2=dc*dc;
+    vector<Laio> vec(values_raw.size());
+    
+    //initialising vec and calculating rho
+    
+    #pragma omp parallel for
+    for (unsigned i=0;i<values_raw.size();i++)
     {
-        if (vec[i].cluster != -1)
+        vec[i].snapshot=i;
+        vec[i].cluster=-1; // Initialised at -1
+        vec[i].rho=0;
+        vec[i].nnhd=-1;
+        vec[i].delta=0;
+        for (unsigned j=0; j<values_raw.size();j++)
         {
-         int snap_center = vec[i].snapshot;
-         //cout << "Assigning point " << snap_center << " as center of cluster " << vec[i].cluster << endl;
-         //cout << "initialising population at 1" << endl;
-         int pop = 1;
-         //cout << "assigning time" << endl;
-         clusters_raw[vec[i].cluster].time = values_raw[snap_center].time;
-         //cout << "assigning rank" << endl;
-         clusters_raw[vec[i].cluster].rank = values_raw[snap_center].rank;
-         //cout << "assigning cvs" << endl;
-         clusters_raw[vec[i].cluster].cvs = values_raw[snap_center].cvs;
-         //cout << "assigning pop" << endl;
-         clusters_raw[vec[i].cluster].population = pop;
-         //cout << "cluster center initialised" << endl;
-         clusters_raw[vec[i].cluster].sigma=values_raw[snap_center].cvs; // If we have a signelton as a cluster, the bias will start at a distance equal zero
-        }
-        else
-        {
-         int snap_i = vec[i].snapshot;
-         //cout << "looking at snapshot " << snap_i << " which corresponds to time: " << values_raw[snap_i].time << endl;
-         for (int j=0; j<i;j++) // points j have a higher density than points i
-           {
-             int snap_j = vec[j].snapshot;
-             //cout << "snap_j: " << vec[j].snapshot << " snap_i.nnhd: " << vec[i].nnhd << endl;
-             if (vec[i].nnhd != vec[j].snapshot) 
-                 continue;
-             //cout << "comparing with snapshot " << snap_j << " which corresponds to time: " << values_raw[snap_j].time << endl;
-             vec[i].cluster=vec[j].cluster;
-             clusters_raw[vec[j].cluster].population += 1;
-             /*
-             //// GOT A WEIRD FEELING THAT THIS (DOWN)SHOULD NOT BE HERE ////
-             double r2=0; // Finding the furthest point in the cluster;
-             for (int k=0; k<values_raw[snap_i].cvs.size();k++)
-             {   
-                 r2 += pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
-             }
-             //cout << "r2 for cluster " << vec[j].cluster << "is " << r2 << endl;
-             if ((r2>maxdist[vec[j].cluster])) // This should help deal with the unavoidable misassignation
-             {
-              clusters_raw[vec[j].cluster].sigma=values_raw[snap_i].cvs;
-              maxdist[vec[j].cluster]=r2;
-             }
-             //// GOT A WEIRD FEELING THAT THIS(UP) SHOULD NOT BE HERE ////
-              */
-           }
-         
+         if(j==i) continue;
+         double r2=0;
+         for (unsigned k=0; k<values_raw[i].cvs.size();k++)
+             r2 += pow((values_raw[i].cvs[k]-values_raw[j].cvs[k]),2);
+         if (r2<dc2) vec[i].rho++;
         }
     }
-  for (unsigned i=0; i<clusters_raw.size();i++)
-   {
-      int clustcount=0;
-      for (unsigned j=0; j<vec.size();j++)
-      {
-            int clust_j=vec[j].cluster;
-            if (clust_j!=i) continue;
+    
+    // Sorting vec by density
+    sort(vec.begin(),vec.end(),mycmp_rho);
+
+     
+    
+    // Findig nearest neigbour of higher density and calculating delta
+
+    #pragma omp parallel for
+    for (unsigned i=1;i<vec.size();i++)
+    {
+        int snap_i=vec[i].snapshot;
+        double r2min=999999999999.;
+        for (unsigned j=0; j<i; j++) // Points j have a higher density than points i
+        {
             int snap_j=vec[j].snapshot;
             double r2=0;
-            for (int k=0; k<values_raw[j].cvs.size();k++)
-             {   
-                 r2 += pow((values_raw[i].cvs[k]-values_raw[snap_j].cvs[k]),2);
-             }
-            double r=sqrt(r2);
-            cout << r << endl;
-            clustcount++;
-      }
-      cout << "Count: " << clustcount << endl;
-      exit(0);
-   }
-   
-  }
-  
-    /*for (int i=0; i<values_raw.size();i++)
-      {
-          cout << vec[i].snapshot << " " << vec[i].rho << " " << vec[i].delta << " " << vec[i].nnhd << " " << vec[i].cluster << endl;
-      }*/
-  
-  }
-  /*
-  cout << "Found " << clusters_raw.size() << " Clusters" << endl;
-  for (unsigned i=0;i<clusters_raw.size();i++)
-  {
-      cout << "Cluster " << i << "Sigma: ";
-      for (unsigned j=0; j< clusters_raw[i].sigma.size();j++)
-          cout << clusters_raw[i].sigma[j] << ",";
-      cout << endl;
-  }
-  exit(0);
-   */
+            for (unsigned k=0; k<values_raw[i].cvs.size();k++)
+                r2 += pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
+            if (r2<r2min)
+            {
+               vec[i].nnhd=snap_j;
+               vec[i].delta=sqrt(r2);
+               r2min=r2;
+            }
+        }
+    }
+    
+    // For the point with the highest density, delta is the furthest point in the dataset
+    int snap0=vec[0].snapshot;
+        double r2max=0.;
+        for (unsigned j=1; j<vec.size(); j++) 
+        {
+            int snap_j=vec[j].snapshot;
+            double r2=0;
+            for (unsigned k=0; k<values_raw[0].cvs.size();k++)
+                r2 += pow((values_raw[snap0].cvs[k]-values_raw[snap_j].cvs[k]),2);
+            if (r2>r2max)
+            {
+               vec[0].delta=sqrt(r2);
+               r2max=r2;
+            }
+        }
+    
+    //Choosing cluster centres
+    vector<values> clusters_raw;
+    int nclust=0;
+    for (unsigned i=0;i<vec.size();i++)
+    {
+        if (vec[i].delta>delta0)
+        {
+         int snap_i=vec[i].snapshot;
+         clusters_raw.push_back(values_raw[snap_i]);
+         clusters_raw[nclust].population=1;
+         vec[i].cluster=nclust;
+         nclust += 1;
+        }
+    }
+    
+    //Extreme case in which delta0 is too big
+    if (nclust==0)
+    {
+     int snap_i=vec[0].snapshot;
+     clusters_raw.push_back(values_raw[snap_i]);
+     clusters_raw[nclust].population=1;
+     vec[0].cluster=nclust;
+     nclust += 1;
+    }
+    
+    // Assigning points to clusters
+    for (unsigned i=0;i<vec.size();i++)
+    {
+        if (vec[i].cluster!=-1) // if cluster index is not -1 it means it's a centre assigned in the previous bit
+            continue;
+        int snap_i=vec[i].snapshot;
+        for (unsigned j=0; j<i; j++) //points j have higher density than points i;
+        {
+            int snap_j=vec[j].snapshot;
+            if (vec[i].nnhd!=snap_j)
+                continue;
+            vec[i].cluster=vec[j].cluster;
+            clusters_raw[vec[i].cluster].population += 1;
+        }
+    }
+    
+    // Finding the furthest point form the centre within each cluster
+    for (unsigned i=0; i<clusters_raw.size();i++)
+    {
+       double r2max=0.;
+       for (unsigned j=0; j<vec.size();j++)
+       {
+           if(vec[j].cluster!=i)
+               continue;
+           int snap_j=vec[j].snapshot;
+           double r2=0;
+           for (unsigned k=0; k<values_raw[snap_j].cvs.size();k++)
+           {
+               r2 += pow((clusters_raw[i].cvs[k]-values_raw[snap_j].cvs[k]),2);
+           }
+           if (r2>r2max)
+           {
+             clusters_raw[i].sigma= values_raw[snap_j].cvs;
+             r2max=r2;
+           }
+       }
+       //cout << "Sigma for cluster " << i << " equal to " << sqrt(r2max) << endl;
+    }
+    
+   ofstream rhodelta;
+   rhodelta.open("rhodelta.txt");
+   rhodelta << "Index  Snapshot Cluster Rho NNHD Delta\n";
+   for (unsigned i=0; i<vec.size(); i++)    
+    {
+     rhodelta << i << " " << vec[i].snapshot << " " << vec[i].cluster << " " << vec[i].rho << " " << vec[i].nnhd << " " << vec[i].delta << endl;
+    }
+    cout << "Found " << nclust << " clusters" << endl;
+        
+    
+    
+  //exit(0);  
   return clusters_raw;
 }
 
@@ -564,7 +488,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   // 1) This gives us r=sqrt[(cv1-cv1_0)**2+...+(cvN-cvN_0)**2] and dr=1/2r
   vector<double> r2(clusters.size(),0);
   vector<double> at2(clusters.size(),0);
-  #pragma omp parallel for shared(r2)
+  //#pragma omp parallel for shared(r2)
   for (unsigned j=0; j<cv.size();j++)
   {
    for (unsigned i=0; i<clusters.size();i++)
@@ -581,9 +505,9 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   {
     r[i]=sqrt(r2[i]);
     at[i]=sqrt(at2[i]);
-    if (at[i]>delta0) at[i]=delta0; 
+    //if (at[i]>delta0) at[i]=delta0; 
     dr[i]=1/(2*r[i]);
-    cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
+    //cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
   }
   
   // Get V(r) and dV(r)
@@ -598,7 +522,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
      double k_i=clusters[i].population*height;
      V_r[i]=k_i*pow((r[i]-at[i]),2);
      dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
-     cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
+     //cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
     }
   }
   else
@@ -609,13 +533,12 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   
   // Add the derivatives with respect to every CV
   // dV(r)=(dV(r)/dr)*(dr/dCV_i)*dCV_i
-  vector<vector<double> > potFor(cv.size());
+  vector<vector<double> > potFor(2);
   vector<double> V_cv(cv.size(),0.);
   vector<double> dV_cv(cv.size(),0.);
-  #pragma omp parallel for shared(V_cv,dV_cv)
+  //#pragma omp parallel for shared(V_cv,dV_cv)
   for (unsigned j=0; j<cv.size();j++)
   {
-   vector<double> potfor_j(2,0);
    for (unsigned i=0; i<clusters.size();i++)
    {
     V_cv[j] += V_r[i]/cv.size(); // This might be violating a few laws of physics
@@ -625,17 +548,18 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
     dV_cv[j] += dV_dr[i]*2*(cv_j-cv0_j);
    }
    
-   potfor_j[0]=V_cv[j];
-   potfor_j[1]=-dV_cv[j];
-   potFor[j]=potfor_j;
+   potFor[0].push_back(V_cv[j]);
+   potFor[1].push_back(-dV_cv[j]);
   }
+  
   /*
   for (unsigned j=0; j<cv.size();j++)
   {
       cout << "biasing potential for CV " << j << " is " << potFor[j][0] << endl;
-      //cout << "negative derivative of the biasing potential for CV " << j << " is " << potFor[j][1] << endl;
+      cout << "negative derivative of the biasing potential for CV " << j << " is " << potFor[j][1] << endl;
   }
    */
+   
   
   return potFor;
   
@@ -739,24 +663,24 @@ void SITH::calculate(){
        clustfile << endl;
       }
       clustfile.close();
-     }
-     
-     //Rescaling the bias to switch it on over sithstepsup steps
-     double resc;
-     if (sithstepsup!=0) resc=mod/sithstepsup;
-     else resc=1;
-     
-     double height_resc = height*resc;
-     
-     if (height_resc>1) height_resc=1.;
-     //cout << "Step = " << step <<", mod = " << mod << ", height= " << height << " sithstepsup= "<< sithstepsup << " height_resc= " << height_resc <<endl;
-     
-     //Update the biasing potentials and forces
-     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0);
-     potentials=potfor[0];
-     forces=potfor[1];             
-     //exit(0);   
+     }  
   }
+  
+  //Rescaling the bias to switch it on over sithstepsup steps
+  int mod = step % sithstride;
+  double resc;
+  if (sithstepsup!=0) resc=mod/sithstepsup;
+  else resc=1;
+  if (resc>1) resc=1;
+  double height_resc = height*resc;
+  //if (height_resc>1) height_resc=1.;
+  //cout << "Step = " << step <<", mod = " << mod << ", height= " << height << " sithstepsup= "<< sithstepsup << " height_resc= " << height_resc <<endl;
+   
+  //Update the biasing potentials and forces             
+  //exit(0); 
+  vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0);
+  potentials=potfor[0];
+  forces=potfor[1];
   }
   
   // This brings the value of a variable from another rank (0 in this case)
