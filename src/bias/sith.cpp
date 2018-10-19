@@ -382,14 +382,15 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       if (i==0)
       {
           double maxdist2=0.;
-          for (int j=i+1; j<values_raw.size();j++)
+          for (int j=1; j<values_raw.size();j++)
           {
+           int snap_j=vec[j].snapshot;
            double r2=0;
-           for (int k=0; k<values_raw[i].cvs.size();k++) 
-              r2=+pow((values_raw[j].cvs[k]-values_raw[i].cvs[k]),2);
+           for (int k=0; k<values_raw[snap_i].cvs.size();k++) 
+              r2=+pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
            if (r2>maxdist2)
              {
-              vec[i].nnhd=snap_i;
+              //vec[i].nnhd=snap_i;
               vec[i].delta=sqrt(r2);
               maxdist2=r2;
              }
@@ -399,18 +400,18 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
       else
       {
           double mindist2=99999999999999.;
-          double nnhd_rho=0.;
+          //double nnhd_rho=0.;
           for (int j=0; j<i; j++)
           {           
             int snap_j=vec[j].snapshot;
             double r2=0;
             for (int k=0; k<values_raw[i].cvs.size();k++) 
                 r2=+pow((values_raw[snap_j].cvs[k]-values_raw[snap_i].cvs[k]),2);
-            if (r2==0) break;
+            //if (r2==0) break;
             if (r2<mindist2)
             {
                 vec[i].nnhd=snap_j;
-                nnhd_rho=vec[j].rho;
+                //nnhd_rho=vec[j].rho;
                 vec[i].delta=sqrt(r2);
                 mindist2=r2;
             }
@@ -439,7 +440,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   
   //cout << "Choosing cluster centres" << endl;
   int nclust=0;
-  for (int i=0; i<values_raw.size();i++)
+  for (unsigned i=0; i<values_raw.size();i++)
    {
       if (vec[i].delta>delta0)
        {
@@ -469,8 +470,6 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
         {
          int snap_center = vec[i].snapshot;
          //cout << "Assigning point " << snap_center << " as center of cluster " << vec[i].cluster << endl;
-         //find the snapshot with time vec[i].time
-         vector<double> cvs_center = values_raw[snap_center].cvs;
          //cout << "initialising population at 1" << endl;
          int pop = 1;
          //cout << "assigning time" << endl;
@@ -478,11 +477,11 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
          //cout << "assigning rank" << endl;
          clusters_raw[vec[i].cluster].rank = values_raw[snap_center].rank;
          //cout << "assigning cvs" << endl;
-         clusters_raw[vec[i].cluster].cvs = cvs_center;
+         clusters_raw[vec[i].cluster].cvs = values_raw[snap_center].cvs;
          //cout << "assigning pop" << endl;
          clusters_raw[vec[i].cluster].population = pop;
          //cout << "cluster center initialised" << endl;
-         clusters_raw[vec[i].cluster].sigma=clusters_raw[vec[i].cluster].cvs; // If we have a signelton as a cluster, the bias will start at a distance equal zero
+         clusters_raw[vec[i].cluster].sigma=values_raw[snap_center].cvs; // If we have a signelton as a cluster, the bias will start at a distance equal zero
         }
         else
         {
@@ -497,32 +496,47 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
              //cout << "comparing with snapshot " << snap_j << " which corresponds to time: " << values_raw[snap_j].time << endl;
              vec[i].cluster=vec[j].cluster;
              clusters_raw[vec[j].cluster].population += 1;
+             /*
+             //// GOT A WEIRD FEELING THAT THIS (DOWN)SHOULD NOT BE HERE ////
              double r2=0; // Finding the furthest point in the cluster;
              for (int k=0; k<values_raw[snap_i].cvs.size();k++)
              {   
                  r2 += pow((values_raw[snap_i].cvs[k]-values_raw[snap_j].cvs[k]),2);
              }
              //cout << "r2 for cluster " << vec[j].cluster << "is " << r2 << endl;
-             if ((r2>maxdist[vec[j].cluster]) and (r2<=pow(delta0,2))) // This should help deal with the unavoidable misassignation
+             if ((r2>maxdist[vec[j].cluster])) // This should help deal with the unavoidable misassignation
              {
               clusters_raw[vec[j].cluster].sigma=values_raw[snap_i].cvs;
               maxdist[vec[j].cluster]=r2;
              }
+             //// GOT A WEIRD FEELING THAT THIS(UP) SHOULD NOT BE HERE ////
+              */
            }
          
         }
     }
-  }
-  //cout << Correcting the sd of the clusters
-  #pragma omp for
   for (unsigned i=0; i<clusters_raw.size();i++)
    {
-    for (int k=0; k<clusters_raw[i].cvs.size();k++)
-    {
-     if (isnan(clusters_raw[i].sigma[k]))
-         clusters_raw[i].sigma[k]=clusters_raw[i].cvs[k];
-    }
+      int clustcount=0;
+      for (unsigned j=0; j<vec.size();j++)
+      {
+            int clust_j=vec[j].cluster;
+            if (clust_j!=i) continue;
+            int snap_j=vec[j].snapshot;
+            double r2=0;
+            for (int k=0; k<values_raw[j].cvs.size();k++)
+             {   
+                 r2 += pow((values_raw[i].cvs[k]-values_raw[snap_j].cvs[k]),2);
+             }
+            double r=sqrt(r2);
+            cout << r << endl;
+            clustcount++;
+      }
+      cout << "Count: " << clustcount << endl;
+      exit(0);
    }
+   
+  }
   
     /*for (int i=0; i<values_raw.size();i++)
       {
@@ -544,114 +558,88 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   return clusters_raw;
 }
 
-vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv)
+vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv, double delta0)
 {
-    if (typot=="RESTRAINT")
+  // Calculate the current and equilibrium distances between the current data point and the cluster centres
+  // 1) This gives us r=sqrt[(cv1-cv1_0)**2+...+(cvN-cvN_0)**2] and dr=1/2r
+  vector<double> r2(clusters.size(),0);
+  vector<double> at2(clusters.size(),0);
+  #pragma omp parallel for shared(r2)
+  for (unsigned j=0; j<cv.size();j++)
+  {
+   for (unsigned i=0; i<clusters.size();i++)
+   {
+    r2[i] += pow((cv[j]-clusters[i].cvs[j]),2);
+    at2[i] += pow((clusters[i].cvs[j]-clusters[i].sigma[j]),2);
+   }
+  }
+  
+  vector<double> r(clusters.size(),0);
+  vector<double> at(clusters.size(),0); 
+  vector<double> dr(clusters.size(),0); // Derivative of r it's always 1/(2*sqrt(r))
+  for (unsigned i=0; i<clusters.size();i++)
+  {
+    r[i]=sqrt(r2[i]);
+    at[i]=sqrt(at2[i]);
+    if (at[i]>delta0) at[i]=delta0; 
+    dr[i]=1/(2*r[i]);
+    cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
+  }
+  
+  // Get V(r) and dV(r)
+  // 2) This gives us V(r) and dV(r)=dV*dr
+  vector<double> V_r(clusters.size(),0.);
+  vector<double> dV_dr(clusters.size(),0.);
+  if (typot=="LOWER_WALLS")
+  {
+    for (unsigned i=0; i<clusters.size();i++)
     {
-        //Vector with potentials and forces
-        vector<vector<double> > potfor;
-        
-        //get harmonic constants and zero values
-        vector<double> kappa; // Harmonic constant to push away from each cluster
-        vector<double> at;    // Equilibrium value of the harmonic restraint of each cluster, in the R space formed by all the CVs
-        vector<double> r;     // Distance from each cluster center in the R space formed by all CVs
-        
-        for (unsigned i=0; i<clusters.size();i++)
-        {
-            
-            double at2_i=0;
-            double r2_i=0;
-            for (unsigned j=0; j<cv.size();j++)
-            {
-                at2_i += pow((clusters[i].cvs[j]-clusters[i].sigma[j]),2);
-                r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
-            }
-            
-            double kappa_i=clusters[i].population*height;
-            kappa.push_back(kappa_i);
-            double at_i=sqrt(at2_i);
-            at.push_back(at_i);
-            double r_i=sqrt(r2_i);
-            r.push_back(r_i); 
-        }
-        
-        vector<double> V;
-        vector<double> F;
-        for (unsigned j=0;j<cv.size();j++)
-        {
-          double V_j=0;
-          double F_j=0;
-          for (unsigned i=0; i<clusters.size();i++)
-          {
-              double dr_dcvj=(cv[j]-clusters[i].cvs[j])/r[i]; //derivative of the distance r_i with respect to the CV j (different at each cluster for a given CV)
-              V_j += kappa[i]*pow((r[i]-at[i]),2);
-              F_j += -2*kappa[i]*(r[i]-at[i])*dr_dcvj;
-          }
-          V.push_back(V_j);
-          F.push_back(F_j);
-        }
-        
-        potfor.push_back(V);
-        potfor.push_back(F);
-        return potfor;  
+     if (r[i] >= at[i]) continue;
+     double k_i=clusters[i].population*height;
+     V_r[i]=k_i*pow((r[i]-at[i]),2);
+     dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
+     cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
     }
-    else if (typot=="LOWER_WALLS")
-    {
-        //Vector with potentials and forces
-        vector<vector<double> > potfor;
-        
-        //get harmonic constants and zero values
-        vector<double> kappa; // Harmonic constant to push away from each cluster
-        vector<double> at;    // Equilibrium value of the harmonic restraint of each cluster, in the R space formed by all the CVs
-        vector<double> r;     // Distance from each cluster center in the R space formed by all CVs
-        
-        for (unsigned i=0; i<clusters.size();i++)
-        {
-            
-            double at2_i=0;
-            double r2_i=0;
-            for (unsigned j=0; j<cv.size();j++)
-            {
-                at2_i += pow((clusters[i].cvs[j]-clusters[i].sigma[j]),2);
-                r2_i  += pow((clusters[i].cvs[j]-cv[j]),2);
-            }
-            
-            double kappa_i=clusters[i].population*height;
-            kappa.push_back(kappa_i);
-            double at_i=sqrt(at2_i);
-            at.push_back(at_i);
-            double r_i=sqrt(r2_i);
-            r.push_back(r_i); 
-        }
-        
-        vector<double> V;
-        vector<double> F;
-        for (unsigned j=0;j<cv.size();j++)
-        {
-          double V_j=0;
-          double F_j=0;
-          for (unsigned i=0; i<clusters.size();i++)
-          {
-              double dr_dcvj=(cv[j]-clusters[i].cvs[j])/r[i]; //derivative of the distance r_i with respect to the CV j (different at each cluster for a given CV)
-              V_j += kappa[i]*pow((r[i]-at[i]-sqrt(pow((r[i]-at[i]),2))),2);
-              F_j += -2*kappa[i]*(r[i]-at[i]-sqrt(pow((r[i]-at[i]),2))) 
-                      *(1-(r[i]/sqrt(pow((r[i]-at[i]),2))))
-                      *dr_dcvj;
-          }
-          V.push_back(V_j);
-          F.push_back(F_j);
-        }
-        
-        potfor.push_back(V);
-        potfor.push_back(F);
-        return potfor;  
-    }
-    
-    else
-    {
-     cout << "Biasing potential " << typot << " is not implemented. Check doc for available options."<< endl;
-     exit(0);
-    }
+  }
+  else
+  {
+      cout << "This kind of potential is not implemented. Aborting." << endl;
+      exit(0);
+  }
+  
+  // Add the derivatives with respect to every CV
+  // dV(r)=(dV(r)/dr)*(dr/dCV_i)*dCV_i
+  vector<vector<double> > potFor(cv.size());
+  vector<double> V_cv(cv.size(),0.);
+  vector<double> dV_cv(cv.size(),0.);
+  #pragma omp parallel for shared(V_cv,dV_cv)
+  for (unsigned j=0; j<cv.size();j++)
+  {
+   vector<double> potfor_j(2,0);
+   for (unsigned i=0; i<clusters.size();i++)
+   {
+    V_cv[j] += V_r[i]/cv.size(); // This might be violating a few laws of physics
+    double k_i=clusters[i].population*height;
+    double cv_j=clusters[i].cvs[j];
+    double cv0_j=clusters[i].sigma[j];
+    dV_cv[j] += dV_dr[i]*2*(cv_j-cv0_j);
+   }
+   
+   potfor_j[0]=V_cv[j];
+   potfor_j[1]=-dV_cv[j];
+   potFor[j]=potfor_j;
+  }
+  /*
+  for (unsigned j=0; j<cv.size();j++)
+  {
+      cout << "biasing potential for CV " << j << " is " << potFor[j][0] << endl;
+      //cout << "negative derivative of the biasing potential for CV " << j << " is " << potFor[j][1] << endl;
+  }
+   */
+  
+  return potFor;
+  
+  //exit(0);
 }
 
 void SITH::calculate(){
@@ -764,7 +752,7 @@ void SITH::calculate(){
      //cout << "Step = " << step <<", mod = " << mod << ", height= " << height << " sithstepsup= "<< sithstepsup << " height_resc= " << height_resc <<endl;
      
      //Update the biasing potentials and forces
-     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv);
+     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0);
      potentials=potfor[0];
      forces=potfor[1];             
      //exit(0);   
