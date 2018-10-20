@@ -620,9 +620,7 @@ void SITH::calculate(){
   
   // Clustering snapshots and generating new potentials if necessary
   if (step>=sithstride) // if step is bigger than sithstride...
-  {
-   if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
-   {   
+  {   
      int mod = step % sithstride; // ... check if new clusters need to be calculated ...
      if (mod==0)                  // ... and do it if you have to ...
      {
@@ -633,6 +631,9 @@ void SITH::calculate(){
          if ((dc_opt!=0) and ((step==sithstride) or (step%dc_opt)==0)) 
              dc=optimise_dc(values_raw, dc);
          clusters=cluster_snapshots(values_raw,dc,delta0);
+         
+        if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
+         {
          ofstream clustfile;
          clustfile.open(sithfile.c_str(),std::ios_base::app);
          clustfile << "---------------------------------------------------------" << endl;
@@ -646,6 +647,8 @@ void SITH::calculate(){
            clustfile << endl;
           }
          clustfile.close();
+         }
+         multi_sim_comm.Barrier();
      }  
      // ... then rescaele the populations if you want ...
      double resc=1.0;
@@ -656,9 +659,6 @@ void SITH::calculate(){
      vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0); // ... and calculate the new bias with rank 0 (this is done at every step) ...
      potentials=potfor[0];
      forces=potfor[1];
-    }
-   multi_sim_comm.Bcast(potentials,0); // ... And finally import the bias from rank 0 ...
-   multi_sim_comm.Bcast(forces,0);
   }
   
   
