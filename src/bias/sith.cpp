@@ -179,11 +179,13 @@ walkers_mpi(false)
    printf("Clustering is going to be performed every %i steps.\n", sithstride);
    printf("with dc equal to %f and delta0 equal to %f.\n",dc,delta0);
    if (dc_opt!=0)
+   {
        printf("The function to optimise dc needs to be debugged so it can't be used yet.\n");
        printf("Please delete keyword DCOPT or set it to 0 and restart the calculation\n");
        printf("EXITING\n");
        exit(0);
        //printf("dc will be optimised every %i steps.\n",dc_opt);
+   }
    if (height!=1)
        printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
    if (sithstepsup!=0) 
