@@ -178,8 +178,12 @@ walkers_mpi(false)
    printf("The CVs are going to be printed every %i steps.\n", cvstride);
    printf("Clustering is going to be performed every %i steps.\n", sithstride);
    printf("with dc equal to %f and delta0 equal to %f.\n",dc,delta0);
-   if (dc_opt!=0) 
-       printf("dc will be optimised every %i steps.\n",dc_opt);
+   if (dc_opt!=0)
+       printf("The function to optimise dc needs to be debugged so it can't be used yet.\n");
+       printf("Please delete keyword DCOPT or set it to 0 and restart the calculation\n");
+       printf("EXITING\n");
+       exit(0);
+       //printf("dc will be optimised every %i steps.\n",dc_opt);
    if (height!=1)
        printf("The population of the clusters will be rescaled by a factor of %f.\n", height);
    if (sithstepsup!=0) 
@@ -406,7 +410,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
     //Choosing cluster centres
     vector<values> clusters_raw;
     int nclust=0;
-    for (unsigned i=0;i<vec.size();i++)
+    for (unsigned i=0;i<vec.size();i++) //DON'T OMP THIS LOOP!! WILL MESS WITH THE CLUSTER INDICES
     {
         if (vec[i].delta>delta0)
         {
@@ -429,11 +433,12 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
     }
     
     // Assigning points to clusters
-    for (unsigned i=0;i<vec.size();i++)
+    for (unsigned i=0;i<vec.size();i++) // DON'T OMP THIS LOOP. YOU WILL END UP LOOKING AT POINTS WHOSE NNHD HASN'T BEEN ASSIGNED YET
     {
         if (vec[i].cluster!=-1) // if cluster index is not -1 it means it's a centre assigned in the previous bit
             continue;
         int snap_i=vec[i].snapshot;
+        //YOU COULD IN THEORY OMP THIS LOOP, BUT YOU WOULD BE CREATING AND DELEATING THREADS VERY OFTEN AND THE OVERHEAD WOULD MAKE IT SLOWER
         for (unsigned j=0; j<i; j++) //points j have higher density than points i;
         {
             int snap_j=vec[j].snapshot;
@@ -445,10 +450,10 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
     }
     
     // Finding the furthest point form the centre within each cluster
-    for (unsigned i=0; i<clusters_raw.size();i++)
+    for (unsigned i=0; i<clusters_raw.size();i++) // THE NUMBER OF CLUSTERS SHOULD IN PRINCIPLE BE SMALL SO NO POINT IN OMPing THIS LOOP
     {
        double r2max=0.;
-       for (unsigned j=0; j<vec.size();j++)
+       for (unsigned j=0; j<vec.size();j++) //DON'T OMP THIS LOOP!!! WILL MESS UP r2max
        {
            if(vec[j].cluster!=i)
                continue;
@@ -505,7 +510,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   {
     r[i]=sqrt(r2[i]);
     at[i]=sqrt(at2[i]);
-    //if (at[i]>delta0) at[i]=delta0; 
+    if (at[i]>delta0) at[i]=delta0; 
     dr[i]=1/(2*r[i]);
     //cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
   }
@@ -612,12 +617,12 @@ void SITH::calculate(){
   
   
   // Clustering snapshots and generating new potentials if necessary
-  if (multi_sim_comm.Get_rank()==0)
+  if (step>=sithstride) // if step is bigger than sithstride...
   {
-  if (step>=sithstride)
-  {   
-     int mod = step % sithstride;
-     if (mod==0)
+   if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
+   {   
+     int mod = step % sithstride; // ... check if new clusters need to be calculated ...
+     if (mod==0)                  // ... and do it if you have to ...
      {
          cout << "generating new SITH potentials at time = " << time << " ps (assuming you are doing stuff in ps)." << endl;
          //cout << "Reading the values in CV file: ";
@@ -625,67 +630,35 @@ void SITH::calculate(){
          // Optimising dc
          if ((dc_opt!=0) and ((step==sithstride) or (step%dc_opt)==0)) 
              dc=optimise_dc(values_raw, dc);
-         //cout << "delta0 will be " << delta0_mod << endl;
-         //for (int i=0; i<values_raw.size();i++) cout << values_raw[i].time << endl;
-         //exit(0);
-         //cout << "and performing the clustering to generate new biases" << endl;
          clusters=cluster_snapshots(values_raw,dc,delta0);
-         //cout << "------------------------------------" << endl;
-         //cout << "Clustering at time = " << time<<endl;
-         /*
-         for (int i=0; i<clusters.size();i++) 
-         {
-             
-             cout << "Cluster " << i <<":" << endl;
-             cout << "Time: " << clusters[i].time << endl;
-             cout << "CVs: ";
-             for (int j=0;j<clusters[i].cvs.size();j++) cout << clusters[i].cvs[j] << " ";
-             cout << endl;
-             cout << "SIGMAs: ";
-             for (int j=0;j<clusters[i].sigma.size();j++) cout << clusters[i].sigma[j] << " ";
-             cout << endl;
-             cout << "Population: " << clusters[i].population << endl;
-         }
-         cout << "------------------------------------" << endl;
-          */
-      // Print the cluster centers
-      // Clustfile has: Time_print Rank_clust Time_clust Population, cv_1, cv_2...
-      ofstream clustfile;
-      clustfile.open(sithfile.c_str(),std::ios_base::app);
-      clustfile << "---------------------------------------------------------" << endl;
-      for (int i=0; i<clusters.size();i++)
-      {
-       clustfile << time << " " << clusters[i].rank << " " << clusters[i].time << " " << clusters[i].population << " ";
-       for (unsigned j=0; j<getNumberOfArguments(); j++)
-       {
-           clustfile << clusters[i].cvs[j] << " ";
-       }
-       clustfile << endl;
-      }
-      clustfile.close();
+         ofstream clustfile;
+         clustfile.open(sithfile.c_str(),std::ios_base::app);
+         clustfile << "---------------------------------------------------------" << endl;
+         for (int i=0; i<clusters.size();i++)
+          {
+           clustfile << time << " " << clusters[i].rank << " " << clusters[i].time << " " << clusters[i].population << " ";
+           for (unsigned j=0; j<getNumberOfArguments(); j++)
+            {
+              clustfile << clusters[i].cvs[j] << " ";
+            }
+           clustfile << endl;
+          }
+         clustfile.close();
      }  
+     // ... then rescaele the populations if you want ...
+     double resc=1.0;
+     if (sithstepsup!=0) 
+        resc=mod/sithstepsup;
+     if (resc>1) resc=1;
+     double height_resc = height*resc;
+     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0); // ... and calculate the new bias with rank 0 (this is done at every step) ...
+     potentials=potfor[0];
+     forces=potfor[1];
+    }
+   multi_sim_comm.Bcast(potentials,0); // ... And finally import the bias from rank 0 ...
+   multi_sim_comm.Bcast(forces,0);
   }
   
-  //Rescaling the bias to switch it on over sithstepsup steps
-  int mod = step % sithstride;
-  double resc;
-  if (sithstepsup!=0) resc=mod/sithstepsup;
-  else resc=1;
-  if (resc>1) resc=1;
-  double height_resc = height*resc;
-  //if (height_resc>1) height_resc=1.;
-  //cout << "Step = " << step <<", mod = " << mod << ", height= " << height << " sithstepsup= "<< sithstepsup << " height_resc= " << height_resc <<endl;
-   
-  //Update the biasing potentials and forces             
-  //exit(0); 
-  vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0);
-  potentials=potfor[0];
-  forces=potfor[1];
-  }
-  
-  // This brings the value of a variable from another rank (0 in this case)
-  multi_sim_comm.Bcast(potentials,0);
-  multi_sim_comm.Bcast(forces,0);  
   
   for(unsigned i=0;i<getNumberOfArguments();++i) // It only iterates one time, but I still don't know how to 
   {
