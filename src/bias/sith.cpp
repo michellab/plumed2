@@ -93,7 +93,8 @@ class SITH : public Bias{
   string sithfile; // The name of the file that will contain the clusters found at each sithstride (only write)
   string cvfile; // The name of the file that will contain the cvs involved in the taboo search (read+write)
   string typot; // The type of potential we will use to bias
-  bool walkers_mpi;
+  bool walkers_mpi; // multiple walkers same way as metaD
+  bool limit_r; // limit the bias to a distance equal to delta0
   
 public:
   explicit SITH(const ActionOptions&);
@@ -117,6 +118,7 @@ void SITH::registerKeywords(Keywords& keys){
   keys.add("compulsory","SITHFILE","The name of the file that will contain the clusters found at each sithstride (only write)");
   keys.add("compulsory","CVFILE","The name of the file that will contain the cvs involved in the taboo search (read+write)");
   keys.add("compulsory","TYPOT","The type of potential we will use to bias");
+  keys.addFlag("LIMIT_R",false,"Limit the bias to a distance equal to delta0");
   keys.addFlag("WALKERS_MPI",false,"Switch on MPI version (only version available) of multiple walkers");
   componentsAreNotOptional(keys);
   keys.addOutputComponent("bias","default","the instantaneous value of the bias potential");
@@ -128,7 +130,8 @@ SITH::SITH(const ActionOptions&ao):
 PLUMED_BIAS_INIT(ao),
 //height(getNumberOfArguments(),0),
 //sithstride(getNumberOfArguments(),0)
-walkers_mpi(false)
+walkers_mpi(false),
+limit_r(false)
 {
   sithstepsup=0;
   height=1;
@@ -145,6 +148,7 @@ walkers_mpi(false)
   parse("SITHFILE",sithfile);
   parse("TYPOT",typot);
   parseFlag("WALKERS_MPI",walkers_mpi);
+  parseFlag("LIMIT_R",limit_r);
   checkRead();
  
   int rank;
@@ -489,7 +493,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   return clusters_raw;
 }
 
-vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv, double delta0)
+vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv, double delta0, bool limit_r)
 {
   // Calculate the current and equilibrium distances between the current data point and the cluster centres
   // 1) This gives us r=sqrt[(cv1-cv1_0)**2+...+(cvN-cvN_0)**2] and dr=1/2r
@@ -512,7 +516,8 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   {
     r[i]=sqrt(r2[i]);
     at[i]=sqrt(at2[i]);
-    if (at[i]>delta0) at[i]=delta0; 
+    if (limit_r)
+       if (at[i]>delta0) at[i]=delta0; 
     dr[i]=1/(2*r[i]);
     //cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
   }
@@ -656,7 +661,7 @@ void SITH::calculate(){
         resc=mod/sithstepsup;
      if (resc>1) resc=1;
      double height_resc = height*resc;
-     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0); // ... and calculate the new bias with rank 0 (this is done at every step) ...
+     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
      potentials=potfor[0];
      forces=potfor[1];
   }
