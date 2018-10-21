@@ -469,7 +469,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
            {
                r2 += pow((clusters_raw[i].cvs[k]-values_raw[snap_j].cvs[k]),2);
            }
-           if (r2>r2max)
+           if (r2>=r2max)
            {
              clusters_raw[i].sigma= values_raw[snap_j].cvs;
              r2max=r2;
@@ -626,6 +626,7 @@ void SITH::calculate(){
   // Clustering snapshots and generating new potentials if necessary
   if (step>=sithstride) // if step is bigger than sithstride...
   {   
+     multi_sim_comm.Barrier();
      int mod = step % sithstride; // ... check if new clusters need to be calculated ...
      if (mod==0)                  // ... and do it if you have to ...
      {
