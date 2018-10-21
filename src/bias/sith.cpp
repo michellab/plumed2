@@ -198,7 +198,7 @@ limit_r(false)
       
       
   ofstream wfile;
-  wfile.open(cvfile.c_str());
+  wfile.open(cvfile.c_str(),std::ios_base::app);
   wfile << "Rank Time ";
   for (int i=0; i<getNumberOfArguments();i++)
   {
@@ -208,7 +208,7 @@ limit_r(false)
   wfile.close();
   
   ofstream clustfile;
-  clustfile.open(sithfile.c_str());
+  clustfile.open(sithfile.c_str(),std::ios_base::app);
   clustfile << "Time_print Rank_clust Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
   for (int i=0; i<getNumberOfArguments();i++)
   {
