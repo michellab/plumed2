@@ -37,6 +37,8 @@
 #include <iterator>
 #include <fstream>
 
+#include "newtypes.h"
+
 // introducing openMP (OMP) parallelisation
 #ifdef _OPENMP
     #include <omp.h>
@@ -65,23 +67,9 @@ namespace bias{
  
 */
 //+ENDPLUMEDOC
-
+    
 class SITH : public Bias{
-  private:
-      
-  struct Gaussian {
-   vector<double> center;
-   vector<double> sigma;
-   double height;
-   bool   multivariate; // this is required to discriminate the one dimensional case 
-   vector<double> invsigma;
-   Gaussian(const vector<double> & center,const vector<double> & sigma,double height, bool multivariate ):
-   center(center),sigma(sigma),height(height),multivariate(multivariate),invsigma(sigma)
-      {
-       // to avoid troubles from zero element in flexible hills
-       for(unsigned i=0;i<invsigma.size();++i)abs(invsigma[i])>1.e-20?invsigma[i]=1.0/invsigma[i]:0.; 
-      }
-  };
+private:
   
   double height; // Factor that will rescale he cluster populations (for bias/force generation))
   int sithstride; // Stride to perform the cv clustering and generate a new biasing potential
@@ -100,7 +88,6 @@ public:
   explicit SITH(const ActionOptions&);
   void calculate();
   static void registerKeywords(Keywords& keys);
-  
 };
 
 PLUMED_REGISTER_ACTION(SITH,"SITH")
@@ -153,6 +140,7 @@ limit_r(false)
  
   int rank;
   int nranks;
+  
   if(walkers_mpi) 
   {
       rank=multi_sim_comm.Get_rank();
@@ -219,8 +207,8 @@ limit_r(false)
   }
 }
 
-  
-//Data struct we will use to perform the clustering
+/*
+  //Data struct we will use to perform the clustering
  struct Laio
   {
     int snapshot;
@@ -252,13 +240,8 @@ limit_r(false)
       this -> sigma = sigma;
     }
   };
-  
-vector<values> values_raw;
-vector<values> clusters;
+*/
 
-/////////////////////////////////////////////////////////
-// this reads the cvs from CVFILE                      //
-/////////////////////////////////////////////////////////
 vector<values> getCVs(string CV_file)
 {
  vector<values> values_raw;
@@ -342,9 +325,6 @@ double optimise_dc(vector<values> & values_raw, double dc)
  return dc;
 }
 
-/////////////////////////////////////////////////////////
-// BEGINNING OF THE LAIO FUNCTION                      //
-/////////////////////////////////////////////////////////
 vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double delta0)
 {
     double dc2=dc*dc;
@@ -493,6 +473,20 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   return clusters_raw;
 }
 
+vector<values> resize_clusters(int nClusters, int nArgs)
+{
+    vector<values> clusters;
+    int rank=-1;
+    double time=-1;
+    vector<double> cvs(nArgs,0);
+    int  population=-1;
+    vector<double> sigma(nArgs,0);
+    for (unsigned i=0;i<nClusters;i++)
+      clusters.push_back(values(rank,time,cvs,population,sigma));  
+    
+    return clusters;
+}
+
 vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv, double delta0, bool limit_r)
 {
   // Calculate the current and equilibrium distances between the current data point and the cluster centres
@@ -577,19 +571,25 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   
   //exit(0);
 }
-
+ 
+vector<values> values_raw;
+vector<values> clusters;
+ 
 void SITH::calculate(){
-  
   // All this has to go here to initialise the bias at 0 for the first few steps
   int rank;
+  int nranks;
   if (walkers_mpi)
   {
-   rank=multi_sim_comm.Get_rank();  
+   rank=multi_sim_comm.Get_rank(); 
+   nranks=multi_sim_comm.Get_size();
   }
   else
   {
-   rank=0;   
+   rank=0;
+   nranks=1;
   }
+  
   
   int step=getStep();
   double time=getTime();
@@ -604,7 +604,10 @@ void SITH::calculate(){
   vector<double> potentials(getNumberOfArguments(),0);
   vector<double> forces(getNumberOfArguments(),0);
   
-
+  
+  // This is to transfer the cluster across all MPI ranks
+  int nClusters=0;
+  
   //Check if values have to be printed in cvfile
   int mod = step % cvstride;
   if (mod==0)
@@ -626,10 +629,12 @@ void SITH::calculate(){
   // Clustering snapshots and generating new potentials if necessary
   if (step>=sithstride) // if step is bigger than sithstride...
   {   
-     multi_sim_comm.Barrier();
      int mod = step % sithstride; // ... check if new clusters need to be calculated ...
      if (mod==0)                  // ... and do it if you have to ...
      {
+       multi_sim_comm.Barrier();
+       if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
+       {
          cout << "generating new SITH potentials at time = " << time << " ps (assuming you are doing stuff in ps)." << endl;
          //cout << "Reading the values in CV file: ";
          values_raw=getCVs(cvfile);
@@ -637,9 +642,8 @@ void SITH::calculate(){
          if ((dc_opt!=0) and ((step==sithstride) or (step%dc_opt)==0)) 
              dc=optimise_dc(values_raw, dc);
          clusters=cluster_snapshots(values_raw,dc,delta0);
+         nClusters=clusters.size();
          
-        if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
-         {
          ofstream clustfile;
          clustfile.open(sithfile.c_str(),std::ios_base::app);
          clustfile << "---------------------------------------------------------" << endl;
@@ -653,9 +657,30 @@ void SITH::calculate(){
            clustfile << endl;
           }
          clustfile.close();
-         }
-         multi_sim_comm.Barrier();
-     }  
+       }
+       multi_sim_comm.Barrier();
+         
+       // Get the number of clusters
+       multi_sim_comm.Bcast(nClusters,0);
+       
+       // Resize the clusters vector in ranks other than 0
+       if (rank!=0)
+           clusters=resize_clusters(nClusters,getNumberOfArguments());  
+       multi_sim_comm.Barrier();
+       
+       // Bring the clusters from rank 0 to other ranks
+       for (unsigned i=0;i<nClusters;i++)
+       {
+        //cout << " Bringing time, rank and population of cluster " << i << " to rank " << rank << endl;
+        multi_sim_comm.Bcast(clusters[i].rank,0);
+        multi_sim_comm.Bcast(clusters[i].time,0);
+        multi_sim_comm.Bcast(clusters[i].population,0);
+        multi_sim_comm.Bcast(clusters[i].cvs,0);
+        multi_sim_comm.Bcast(clusters[i].sigma,0);
+       }
+     }
+     multi_sim_comm.Barrier(); // Not sure this barrier is necessary, but it doesn't hurt to have it here (I think)
+     
      // ... then rescaele the populations if you want ...
      double resc=1.0;
      if (sithstepsup!=0) 
