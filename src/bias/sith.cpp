@@ -505,11 +505,11 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   
   vector<double> r(clusters.size(),0);
   vector<double> at(clusters.size(),0); 
-  vector<double> dr(clusters.size(),0); // Derivative of r it's always 1/(2*sqrt(r))
+  vector<double> dr(clusters.size(),0); // Derivative of r it's always 1/(2*r)
   for (unsigned i=0; i<clusters.size();i++)
   {
     r[i]=sqrt(r2[i]);
-    at[i]=sqrt(at2[i]);
+    at[i]=sqrt(at2[i])*height;
     if (limit_r)
        if (at[i]>delta0) at[i]=delta0; 
     dr[i]=1/(2*r[i]);
@@ -525,7 +525,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
     for (unsigned i=0; i<clusters.size();i++)
     {
      if (r[i] >= at[i]) continue;
-     double k_i=clusters[i].population*height;
+     double k_i=clusters[i].population;
      V_r[i]=k_i*pow((r[i]-at[i]),2);
      dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
      //cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
@@ -548,7 +548,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
    for (unsigned i=0; i<clusters.size();i++)
    {
     V_cv[j] += V_r[i]/cv.size(); // This might be violating a few laws of physics
-    double k_i=clusters[i].population*height;
+    //double k_i=clusters[i].population;
     double cv_j=clusters[i].cvs[j];
     double cv0_j=clusters[i].sigma[j];
     dV_cv[j] += dV_dr[i]*2*(cv_j-cv0_j);
@@ -633,8 +633,10 @@ void SITH::calculate(){
      if (mod==0)                  // ... and do it if you have to ...
      {
        multi_sim_comm.Barrier();
+       
        if (multi_sim_comm.Get_rank()==0) // ... go to rank 0 ...
        {
+           
          cout << "generating new SITH potentials at time = " << time << " ps (assuming you are doing stuff in ps)." << endl;
          //cout << "Reading the values in CV file: ";
          values_raw=getCVs(cvfile);
@@ -658,6 +660,7 @@ void SITH::calculate(){
           }
          clustfile.close();
        }
+   
        multi_sim_comm.Barrier();
          
        // Get the number of clusters
@@ -686,8 +689,8 @@ void SITH::calculate(){
      if (sithstepsup!=0) 
         resc=mod/sithstepsup;
      if (resc>1) resc=1;
-     double height_resc = height*resc;
-     vector<vector<double> > potfor=GenPot(typot,clusters,height_resc,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
+     //double height_resc = height*resc;
+     vector<vector<double> > potfor=GenPot(typot,clusters,resc,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
      potentials=potfor[0];
      forces=potfor[1];
   }
