@@ -487,7 +487,7 @@ vector<values> resize_clusters(int nClusters, int nArgs)
     return clusters;
 }
 
-vector<vector<double> > GenPot(string typot, vector<values> & clusters, double height,vector<double> & cv, double delta0, bool limit_r)
+vector<vector<double> > GenPot(string typot, vector<values> & clusters, double resc, double height,vector<double> & cv, double delta0, bool limit_r)
 {
   // Calculate the current and equilibrium distances between the current data point and the cluster centres
   // 1) This gives us r=sqrt[(cv1-cv1_0)**2+...+(cvN-cvN_0)**2] and dr=1/2r
@@ -509,9 +509,9 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
   for (unsigned i=0; i<clusters.size();i++)
   {
     r[i]=sqrt(r2[i]);
-    at[i]=sqrt(at2[i])*height;
+    at[i]=sqrt(at2[i])*resc;
     if (limit_r)
-       if (at[i]>delta0) at[i]=delta0; 
+       if (at[i]>delta0) at[i]=delta0*resc; 
     dr[i]=1/(2*r[i]);
     //cout << "r[ " << i << "] = " << r[i] << " at" << i << "] = " << at[i] << endl;
   }
@@ -525,7 +525,7 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
     for (unsigned i=0; i<clusters.size();i++)
     {
      if (r[i] >= at[i]) continue;
-     double k_i=clusters[i].population;
+     double k_i=clusters[i].population*height;
      V_r[i]=k_i*pow((r[i]-at[i]),2);
      dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
      //cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
@@ -548,7 +548,6 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double h
    for (unsigned i=0; i<clusters.size();i++)
    {
     V_cv[j] += V_r[i]/cv.size(); // This might be violating a few laws of physics
-    //double k_i=clusters[i].population;
     double cv_j=clusters[i].cvs[j];
     double cv0_j=clusters[i].sigma[j];
     dV_cv[j] += dV_dr[i]*2*(cv_j-cv0_j);
@@ -660,7 +659,7 @@ void SITH::calculate(){
           }
          clustfile.close();
        }
-   
+       
        multi_sim_comm.Barrier();
          
        // Get the number of clusters
@@ -684,13 +683,12 @@ void SITH::calculate(){
      }
      multi_sim_comm.Barrier(); // Not sure this barrier is necessary, but it doesn't hurt to have it here (I think)
      
-     // ... then rescaele the populations if you want ...
+     // you'll rescale the distance to smoothly drag your system to at[i] (see function GenPot) over sithstepsup steps
      double resc=1.0;
      if (sithstepsup!=0) 
         resc=mod/sithstepsup;
      if (resc>1) resc=1;
-     //double height_resc = height*resc;
-     vector<vector<double> > potfor=GenPot(typot,clusters,resc,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
+     vector<vector<double> > potfor=GenPot(typot,clusters,resc,height,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
      potentials=potfor[0];
      forces=potfor[1];
   }
