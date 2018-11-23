@@ -29,6 +29,7 @@
 #include <ctime>
 #include <iostream>
 #include <iomanip>
+#include <sys/time.h>
 
 // Kabsch algorithm implementation
 #include "kabsch.h"
@@ -268,6 +269,7 @@ class jedi : public Colvar
 {
 private:
   bool pbc;
+  bool benchmark;
   //for JEDI
   vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
   vector<AtomNumber> polaratoms;//list of polar atoms used for CV
@@ -287,6 +289,7 @@ private:
   int gridstride;//frequency of output (in timestep) of a grid file;
   int dumpderivatives;//frequency of output (in timestep) of JEDI derivatives;
   double delta;//width of Gaussians (currently not used in JEDI)
+  int nthreads; // Number of openMP threads to use (for benchmarking purposes)
   
  
   //deprecated
@@ -317,6 +320,7 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("compulsory","SUMMARY","jedi_stats.dat","summary file jedi descriptor.");
   keys.add("compulsory","GRIDSTRIDE","100","frequency of output of jedi grid.");
   keys.add("optional", "DUMPDERIVATIVES","frequency of output of derivatives.");
+  keys.add("optional", "NTHREADS","Number of OMP threads to use");
   //keys.add("compulsory","GRIDFOLDER","jedi-grids", "folder where jedi grids will be output.");
   //  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
   //  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
@@ -325,7 +329,8 @@ void jedi::registerKeywords(Keywords& keys)
 
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
-pbc(true)
+pbc(true),
+benchmark(false)
 {
   parse("SIGMA", delta);//FIXME: Where is this set//used?? Plumed convention??;
   //string reference_file;
@@ -360,14 +365,13 @@ pbc(true)
     dumpderivatives=atoi(dumpderivatives_string.c_str());
   else
     dumpderivatives=-1;
-
+  
   //string gridstats_folder;
   //parse("GRIDFOLDER",gridstats_folder);
 
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
   pbc=!nopbc;
-  checkRead();
 
   if(pbc)
     log.printf("  using periodic boundary conditions\n");
@@ -376,12 +380,26 @@ pbc(true)
 
   addValueWithDerivatives(); setNotPeriodic();
 
-  int nthreads;
-  #pragma omp parallel shared(nthreads) 
+  string nthreads_string;
+  parse("NTHREADS",nthreads_string);
+  if (nthreads_string.length() == 0)
+    nthreads_string = "null";
+  if (nthreads_string != "null")
   {
-      nthreads=omp_get_num_threads();
+    benchmark=true;
+    nthreads=atoi(nthreads_string.c_str());
+  }
+  else
+  {  
+     #pragma omp parallel
+      {
+       nthreads=omp_get_num_threads();
+      }
   }
   cout << "Running PLUMED with " << nthreads << " openMP threads" << endl;
+  //exit(0);
+  
+  checkRead();
   
   cout << "*** Initialisation of JEDI collective variable ***" << endl;
 
@@ -621,6 +639,14 @@ pbc(true)
   //wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t MaxDerivIdx \t max_deriv_x \t max_deriv_y \t max_deriv_z \t MaxDerivIdx_* \t max_deriv_x* \t max_deriv_y* \t max_deriv_z* \t rmsd" << endl;
   wfile << "#step JEDI Vdrug_like Va Ha JEDI_avg JEDI_sd MaxDerivIdx max_deriv_x max_deriv_y max_deriv_z MaxDerivIdx_* max_deriv_x* max_deriv_y* max_deriv_z* rmsd" << endl;
   wfile.close();
+  
+  if (benchmark)
+  {
+   cout << "This is a benchmark run. Opening performance.txt" << endl;
+   wfile.open("performance.txt");
+   wfile << "Grid JEDI Derivatives Derivatives_correction Total" << endl;
+   wfile.close();
+  }
 
   cout << "*** Completed initialisation JEDI collective variable" << endl;
   //exit(0);
@@ -992,7 +1018,9 @@ void jedi::calculate(){
   //
   //-----------------------------------------
   //-----------------------------------------
-
+  struct timeval begin, time_grid, time_JEDI, time_derivatives, time_derivatives_correction;
+  gettimeofday(&begin, NULL);
+          
   // Check the translation of the center of mass of the binding site region
 
   unsigned n_apolar = apolaratoms.size();
@@ -1179,7 +1207,7 @@ void jedi::calculate(){
     }
   //exit(0);
   //cout << "*** Getting ready for STEP 2" << endl;
-
+  gettimeofday(&time_grid, NULL);
   //-----------------------------------------
   //-----------------------------------------
   //
@@ -1343,7 +1371,7 @@ void jedi::calculate(){
   // cout << current << " " << Jedi << " " << Vdrug_like << " " << Ha << " " << volume/Vmax
   // << " " << COM_x << " " << COM_y << " " << COM_z << " " << score[0] << " " << score[1] << " "
   // << score[2] << " " << score[3] << " " << score[4] << " " << score[5] << " " << score[6] << " " << score[7] << " " << score[8] <<endl;
-
+  gettimeofday(&time_JEDI, NULL);
   //-----------------------------------------
   //-----------------------------------------
   //
@@ -1374,9 +1402,12 @@ void jedi::calculate(){
   int x =1;
   mod = step % x;
   iszero = mod;
-  #pragma omp parallel for schedule(dynamic)
+  #pragma omp parallel for num_threads(nthreads)
   for ( unsigned j=0; j < n_apolarpolar ; j++)
     {
+     //This is just to check that it's using nthreads OMP threads
+     //int thread_id=omp_get_thread_num();
+     //cout << "Hello from thread " << thread_id << endl;
      vector<double> d_ai_xpj_vec;
      d_ai_xpj_vec.reserve(size_grid);
      vector<double> d_ai_ypj_vec;
@@ -1742,6 +1773,7 @@ void jedi::calculate(){
       sum_d_Jedi_torque_ypj += d_Jedi_torque_ypj;
       sum_d_Jedi_torque_zpj += d_Jedi_torque_zpj;
     }
+  gettimeofday(&time_derivatives, NULL);
   //exit(0);
 
   // Check largest forces we have BEFORE net f/t removal
@@ -1987,6 +2019,21 @@ void jedi::calculate(){
       cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " ( " << pdb_idx << " ) " << d_Jedi_dx << " " << d_Jedi_dy << " " << d_Jedi_dz << endl;
       */
     }
+ gettimeofday(&time_derivatives_correction, NULL);
+    
+  if (benchmark)
+  {
+   // Calculate percentages of time of each part of the code
+   double total_secs = ((time_derivatives_correction.tv_sec  - begin.tv_sec) * 1000000u + time_derivatives_correction.tv_usec - begin.tv_usec) / 1.e6;
+   double grid_secs = ((time_grid.tv_sec  - begin.tv_sec) * 1000000u + time_grid.tv_usec - begin.tv_usec) / 1.e6;
+   double JEDI_secs = ((time_JEDI.tv_sec  - time_grid.tv_sec) * 1000000u + time_JEDI.tv_usec - time_grid.tv_usec) / 1.e6;
+   double derivatives_secs = ((time_derivatives.tv_sec  - time_JEDI.tv_sec) * 1000000u + time_derivatives.tv_usec - time_JEDI.tv_usec) / 1.e6;
+   double derivatives_correction_secs = ((time_derivatives_correction.tv_sec  - time_derivatives.tv_sec) * 1000000u + time_derivatives_correction.tv_usec - time_derivatives.tv_usec) / 1.e6;
+   ofstream wfile;
+   wfile.open("performance.txt",std::ios_base::app);
+   wfile << grid_secs << " " << JEDI_secs << " " << derivatives_secs << " " << derivatives_correction_secs << " " << total_secs << endl;
+   wfile.close();
+  }
   
   /* JCN Jan2017: Calculate the norm of the derivative and the difference 
   in the norm and the angle with the derivative the step before*/
