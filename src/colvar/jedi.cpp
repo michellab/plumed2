@@ -270,6 +270,7 @@ class jedi : public Colvar
 private:
   bool pbc;
   bool benchmark;
+  bool print_benchmark;
   //for JEDI
   vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
   vector<AtomNumber> polaratoms;//list of polar atoms used for CV
@@ -321,6 +322,7 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("compulsory","GRIDSTRIDE","100","frequency of output of jedi grid.");
   keys.add("optional", "DUMPDERIVATIVES","frequency of output of derivatives.");
   keys.add("optional", "NTHREADS","Number of OMP threads to use");
+  keys.addFlag("PRINT_BENCHMARK",false,"Print the benchmark in a file");
   //keys.add("compulsory","GRIDFOLDER","jedi-grids", "folder where jedi grids will be output.");
   //  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
   //  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
@@ -330,7 +332,8 @@ void jedi::registerKeywords(Keywords& keys)
 jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true),
-benchmark(false)
+benchmark(false),
+print_benchmark(false)
 {
   parse("SIGMA", delta);//FIXME: Where is this set//used?? Plumed convention??;
   //string reference_file;
@@ -398,6 +401,9 @@ benchmark(false)
   }
   cout << "Running PLUMED with " << nthreads << " openMP threads" << endl;
   //exit(0);
+  parseFlag("PRINT_BENCHMARK",print_benchmark);
+  if (print_benchmark)
+      cout << "Benchmark data will be printed in file performance.txt";
   
   checkRead();
   
@@ -640,7 +646,7 @@ benchmark(false)
   wfile << "#step JEDI Vdrug_like Va Ha JEDI_avg JEDI_sd MaxDerivIdx max_deriv_x max_deriv_y max_deriv_z MaxDerivIdx_* max_deriv_x* max_deriv_y* max_deriv_z* rmsd" << endl;
   wfile.close();
   
-  if (benchmark)
+  if (benchmark and print_benchmark)
   {
    cout << "This is a benchmark run. Opening performance.txt" << endl;
    wfile.open("performance.txt");
@@ -2021,7 +2027,7 @@ void jedi::calculate(){
     }
  gettimeofday(&time_derivatives_correction, NULL);
     
-  if (benchmark)
+  if (benchmark and print_benchmark)
   {
    // Calculate percentages of time of each part of the code
    double total_secs = ((time_derivatives_correction.tv_sec  - begin.tv_sec) * 1000000u + time_derivatives_correction.tv_usec - begin.tv_usec) / 1.e6;
