@@ -624,7 +624,7 @@ void SITH::calculate(){
    // cvfile has: Rank, Time, cv_1, cv_2...
    ofstream wfile;
    wfile.open(cvfile.c_str(),std::ios_base::app);
-   wfile << rank << " " << time << " ";
+   wfile << iteration << " " << rank << " " << time << " ";
    for (int i=0; i<getNumberOfArguments();i++)
    {
        double cv=getArgument(i);
