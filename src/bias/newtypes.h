@@ -21,13 +21,15 @@ struct Laio
   
   //Data struct we will use to store the time, cv values, population and width of each cluster
   struct values {
+  int iteration;
   int rank;
   double time;
   vector<double> cvs;
   int  population;
   vector<double> sigma;
-  values(int rank, double time,vector<double> cvs, int population, vector<double> sigma) 
+  values(int iteration, int rank, double time,vector<double> cvs, int population, vector<double> sigma) 
     {
+      this -> iteration = iteration;
       this -> rank = rank;
       this -> time = time;
       this -> cvs = cvs;
