@@ -83,6 +83,7 @@ private:
   string typot; // The type of potential we will use to bias
   bool walkers_mpi; // multiple walkers same way as metaD
   bool limit_r; // limit the bias to a distance equal to delta0
+  int iteration; // SITH iteration you are running
   
 public:
   explicit SITH(const ActionOptions&);
@@ -105,6 +106,7 @@ void SITH::registerKeywords(Keywords& keys){
   keys.add("compulsory","SITHFILE","The name of the file that will contain the clusters found at each sithstride (only write)");
   keys.add("compulsory","CVFILE","The name of the file that will contain the cvs involved in the taboo search (read+write)");
   keys.add("compulsory","TYPOT","The type of potential we will use to bias");
+  keys.add("optional","ITERATION","Taboo search iteration you are running");
   keys.addFlag("LIMIT_R",false,"Limit the bias to a distance equal to delta0");
   keys.addFlag("WALKERS_MPI",false,"Switch on MPI version (only version available) of multiple walkers");
   componentsAreNotOptional(keys);
@@ -120,6 +122,8 @@ PLUMED_BIAS_INIT(ao),
 walkers_mpi(false),
 limit_r(false)
 {
+  // Setting defaults for optional keywords
+  iteration=0;
   sithstepsup=0;
   height=1;
   dc_opt=0;  
@@ -136,6 +140,7 @@ limit_r(false)
   parse("TYPOT",typot);
   parseFlag("WALKERS_MPI",walkers_mpi);
   parseFlag("LIMIT_R",limit_r);
+  parse("ITERATION",sithfile);
   checkRead();
  
   int rank;
@@ -166,7 +171,7 @@ limit_r(false)
   
   if (rank==0)
   {
-   printf("Initialising SITH sampling protocol\n");
+   printf("Initialising SITH sampling protocol at iteration %i\n", iteration);
    printf("The CVs are going to be printed every %i steps.\n", cvstride);
    printf("Clustering is going to be performed every %i steps.\n", sithstride);
    printf("with dc equal to %f and delta0 equal to %f.\n",dc,delta0);
@@ -184,26 +189,29 @@ limit_r(false)
        printf("After clustering, the bias will be linearly switched on along %f steps.\n", sithstepsup);
    printf("Please read and cite: Rodriguez, A.; Laio, A.; Science (2014) 344(6191) p.1496\n");   
       
-      
-  ofstream wfile;
-  wfile.open(cvfile.c_str(),std::ios_base::app);
-  wfile << "Rank Time ";
-  for (int i=0; i<getNumberOfArguments();i++)
-  {
-   wfile << "CV_" << i << " "; //How do you get the CV labels?
-  }
-  wfile << endl;
-  wfile.close();
+   if (iteration==0)
+   {
+     ofstream wfile;
+     wfile.open(cvfile.c_str(),std::ios_base::app);
+     wfile << "Iteration Rank Time ";
+     for (int i=0; i<getNumberOfArguments();i++)
+     {
+      wfile << "CV_" << i << " "; //How do you get the CV labels?
+     }
+     wfile << endl;
+     wfile.close();
   
-  ofstream clustfile;
-  clustfile.open(sithfile.c_str(),std::ios_base::app);
-  clustfile << "Time_print Rank_clust Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
-  for (int i=0; i<getNumberOfArguments();i++)
-  {
-   clustfile << "CV_" << i << " "; //How do you get the CV labels?
-  }
-  clustfile << endl;
-  clustfile.close();
+     ofstream clustfile;
+     clustfile.open(sithfile.c_str(),std::ios_base::app);
+     clustfile << "Iteration Time_print Rank_clust Time_clust Population "; //Time_print is the time at which it has been printed, Time_clust is the time of the cluster center
+     for (int i=0; i<getNumberOfArguments();i++)
+     {
+      clustfile << "CV_" << i << " "; //How do you get the CV labels?
+     }
+     clustfile << endl;
+     clustfile.close();
+   }
+   
   }
 }
 
@@ -253,16 +261,17 @@ vector<values> getCVs(string CV_file)
   istringstream iss(line);
   istream_iterator<string> beg(iss), end;
   vector<string> tokens(beg, end);
-  int rank=atoi(tokens[0].c_str());
-  double time=atof(tokens[1].c_str());
+  int iteration=atoi(tokens[0].c_str());
+  int rank=atoi(tokens[1].c_str());
+  double time=atof(tokens[2].c_str());
   vector<double> cvs;
-  for (int i=2;i<tokens.size();i++)
+  for (int i=3;i<tokens.size();i++)
   {
       cvs.push_back(atof(tokens[i].c_str()));
   }
   int population=0;
   vector<double> sigma;
-  values_raw.push_back(values(rank,time, cvs, population, sigma));
+  values_raw.push_back(values(iteration,rank,time, cvs, population, sigma));
  }
  //exit(0);
  return values_raw;
@@ -460,7 +469,7 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
     
    ofstream rhodelta;
    rhodelta.open("rhodelta.txt");
-   rhodelta << "Index  Snapshot Cluster Rho NNHD Delta\n";
+   rhodelta << "Index Snapshot Cluster Rho NNHD Delta\n";
    for (unsigned i=0; i<vec.size(); i++)    
     {
      rhodelta << i << " " << vec[i].snapshot << " " << vec[i].cluster << " " << vec[i].rho << " " << vec[i].nnhd << " " << vec[i].delta << endl;
@@ -473,7 +482,8 @@ vector<values> cluster_snapshots(vector<values> & values_raw, double dc, double 
   return clusters_raw;
 }
 
-vector<values> resize_clusters(int nClusters, int nArgs)
+// JCN Jan2019: I think this was done for MPI related reasons.
+vector<values> resize_clusters(int nClusters, int nArgs, int iteration)
 {
     vector<values> clusters;
     int rank=-1;
@@ -482,7 +492,7 @@ vector<values> resize_clusters(int nClusters, int nArgs)
     int  population=-1;
     vector<double> sigma(nArgs,0);
     for (unsigned i=0;i<nClusters;i++)
-      clusters.push_back(values(rank,time,cvs,population,sigma));  
+      clusters.push_back(values(iteration,rank,time,cvs,population,sigma));  
     
     return clusters;
 }
@@ -626,7 +636,18 @@ void SITH::calculate(){
   
   
   // Clustering snapshots and generating new potentials if necessary
-  if (step>=sithstride) // if step is bigger than sithstride...
+  //FIXME:
+  /*
+   if (iteration>0 and step==0)
+   * {
+   *  read_the_bias_from_somewhere() // You shouldn't need to recluster
+   * }
+   * else if (step>=sithstride)
+   * {
+   *  run_clustering_as_below()
+   * }
+   */
+  if ((step>=sithstride) or (iteration>0 and step==0))
   {   
      int mod = step % sithstride; // ... check if new clusters need to be calculated ...
      if (mod==0)                  // ... and do it if you have to ...
@@ -650,7 +671,7 @@ void SITH::calculate(){
          clustfile << "---------------------------------------------------------" << endl;
          for (int i=0; i<clusters.size();i++)
           {
-           clustfile << time << " " << clusters[i].rank << " " << clusters[i].time << " " << clusters[i].population << " ";
+           clustfile << iteration << " " << time << " " << clusters[i].rank << " " << clusters[i].time << " " << clusters[i].population << " ";
            for (unsigned j=0; j<getNumberOfArguments(); j++)
             {
               clustfile << clusters[i].cvs[j] << " ";
@@ -667,13 +688,14 @@ void SITH::calculate(){
        
        // Resize the clusters vector in ranks other than 0
        if (rank!=0)
-           clusters=resize_clusters(nClusters,getNumberOfArguments());  
+           clusters=resize_clusters(nClusters,getNumberOfArguments(),iteration);  
        multi_sim_comm.Barrier();
        
        // Bring the clusters from rank 0 to other ranks
        for (unsigned i=0;i<nClusters;i++)
        {
         //cout << " Bringing time, rank and population of cluster " << i << " to rank " << rank << endl;
+        multi_sim_comm.Bcast(clusters[i].iteration,0);   
         multi_sim_comm.Bcast(clusters[i].rank,0);
         multi_sim_comm.Bcast(clusters[i].time,0);
         multi_sim_comm.Bcast(clusters[i].population,0);
@@ -688,7 +710,8 @@ void SITH::calculate(){
      if (sithstepsup!=0) 
         resc=mod/sithstepsup;
      if (resc>1) resc=1;
-     vector<vector<double> > potfor=GenPot(typot,clusters,resc,height,cv,delta0,limit_r); // ... and calculate the new bias with rank 0 (this is done at every step) ...
+     vector<vector<double> > potfor=GenPot(typot,clusters,resc,height,cv,delta0,limit_r); // ... and calculate the new bias from the present rank (done at every step)...
+     //FIXME: Store information about the bias somewhere so you can read it at the beginning of the next iteration!
      potentials=potfor[0];
      forces=potfor[1];
   }
