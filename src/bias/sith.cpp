@@ -140,7 +140,7 @@ limit_r(false)
   parse("TYPOT",typot);
   parseFlag("WALKERS_MPI",walkers_mpi);
   parseFlag("LIMIT_R",limit_r);
-  parse("ITERATION",sithfile);
+  parse("ITERATION",iteration);
   checkRead();
  
   int rank;
