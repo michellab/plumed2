@@ -534,10 +534,20 @@ vector<vector<double> > GenPot(string typot, vector<values> & clusters, double r
   {
     for (unsigned i=0; i<clusters.size();i++)
     {
-     if (r[i] >= at[i]) continue;
-     double k_i=clusters[i].population*height;
-     V_r[i]=k_i*pow((r[i]-at[i]),2);
-     dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
+     // JM test 02/19    
+     //if (r[i] >= at[i]) continue;
+     //double k_i=clusters[i].population*height;
+     //V_r[i]=k_i*pow((r[i]-at[i]),2);
+     //dV_dr[i]=2*k_i*(r[i]-at[i])*dr[i];
+
+     double cut = 0.1;
+     cout << "r[i] " << r[i] << " a[i] " << a[i] << " cut " << cut << endl;
+     if (r[i] >= cut) continue;
+     double k_i=height;
+     V_r[i]=k_i*pow((r[i]-cut),2);
+     dV_dr[i]=2*k_i*(r[i]-cut)*dr[i];
+
+
      //cout << "V_r["<< i << "] is equal to " << V_r[i] << endl;
     }
   }
