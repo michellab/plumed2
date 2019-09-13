@@ -1301,7 +1301,7 @@ void jedi::calculate(){
       activity[i] = s_on_mind[i] * s_on_exposure[i];
       //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
     }
-     grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
+     //grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
      //for (unsigned i=0;i<size_grid;i++) cout << grid_s_off_bsi[i] << endl;
      //cout << "grid has " << size_grid << " points"<<endl;
      //cout << "site has " << site_positions.size() << " points"<<endl;
