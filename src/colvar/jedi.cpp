@@ -2232,10 +2232,19 @@ void jedi::calculate(){
       tail3.append(".txt"); // activities
       actifilename.append(tail3);
       wfile.open(actifilename.c_str());
+      wfile << "Point Activity Lig_i Contact Exposure" << endl;
       for (unsigned i=0; i<size_grid; i++)
         {
          double ai = activity[i];
-	 wfile <<  std::fixed << std::setprecision(5) << ai << endl;
+         double lig_i = grid_s_off_bsi[i];
+         double cc_i = s_on_mind[i];
+         double s_on_exposure_i = s_on_exposure[i];
+	       wfile <<  std::fixed << i << " " <<
+                   std::setprecision(5) << ai << " " << 
+                   std::setprecision(5) << lig_i << " " <<
+                   std::setprecision(5) << cc_i  << " " << 
+                   std::setprecision(5) << s_on_exposure_i << " " <<
+                   endl;
         }
       wfile.close();
   }
