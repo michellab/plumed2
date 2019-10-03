@@ -1293,14 +1293,15 @@ void jedi::calculate(){
 	  double term1 = s_off(1.0,min_dist_list[k],params.CC2_min,params.deltaCC2);
 	  exposure_score += term1;
 	}
-      exposure[i] = exposure_score;
-      s_on_exposure[i]  = s_on( 1.0, exposure_score, params.Emin, params.deltaE);
+      exposure[i] = exposure_score/neighbors[i].size();
+      s_on_exposure[i]  = s_on( 1.0, exposure[i], params.Emin, params.deltaE);
       //cout << " i " << i << " neighbors " << neighbors_i.size() << " exposure " << exposure_score << " s_on_exposure " << s_on_exposure[i] << endl;
       //s_on_exposure[i] = 1.0;
       // This now gives the activity value from equation 5 (lig_i multiplied later)
       activity[i] = s_on_mind[i] * s_on_exposure[i];
       //cout << "i " << i << " activity[i] " << activity[i] << " s_on_mind[i] " << s_on_mind[i] << " s_on_exposure[i] "<< s_on_exposure[i] << " grid_s_off_bsi[i] " << grid_s_off_bsi[i]  << " exposure[i] " << exposure[i] << " volume " <<  volume << endl;
-    }
+      //cout << "Exposure wo neighbours " << exposure_score << " and w neigbours "<<exposure[i]<<endl; 
+    }    
      //grid_s_off_bsi = set_bs_values(grid_positions, site_positions, params.theta, params.BSmin, params.deltaBS);
      //for (unsigned i=0;i<size_grid;i++) cout << grid_s_off_bsi[i] << endl;
      //cout << "grid has " << size_grid << " points"<<endl;
