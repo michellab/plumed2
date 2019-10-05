@@ -1538,6 +1538,11 @@ void jedi::calculate(){
 	      d_exposure_ypj += allterms_y;
 	      d_exposure_zpj += allterms_z;
 	    }
+    //Normalisation constant is the total number of neighbours  
+    d_exposure_xpj/=neighbors[i].size();
+    d_exposure_ypj/=neighbors[i].size();
+    d_exposure_zpj/=neighbors[i].size();
+
 	  d_exposure_xpj *= (1.0/params.deltaCC2);
 	  d_exposure_ypj *= (1.0/params.deltaCC2);
 	  d_exposure_zpj *= (1.0/params.deltaCC2);
