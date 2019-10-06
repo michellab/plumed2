@@ -30,6 +30,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sys/time.h>
+#include <algorithm>
 
 // Kabsch algorithm implementation
 #include "kabsch.h"
@@ -109,6 +110,7 @@ public:
   double V_min;
   double deltaV_min;
   double resolution;
+  double bsite_cutoff;
   //deprecated
   //double deltaGP1;
  //double deltaGP2;
@@ -139,6 +141,7 @@ jediparameters::jediparameters()
   V_min = 0.0;
   deltaV_min = 0.0;
   resolution = 0.0;
+  bsite_cutoff=0.0;
  //deltaGP1 = 0.0;
   //deltaGP2 = 0.0;
 
@@ -209,6 +212,8 @@ bool jediparameters::readParams(string &parameters_file)
 	deltaV_min = item;
       else if ( key == string("grid_resolution") )
 	resolution = item;
+      else if ( key == string("bsite_cutoff") )
+	bsite_cutoff = item;
       //else if ( key == string("deltaGP1") )
       //	deltaGP1 = item;
       //else if ( key == string("deltaGP2") )
@@ -238,6 +243,7 @@ bool jediparameters::readParams(string &parameters_file)
   cout << "V_min  = " << V_min << endl;
   cout << "deltaV_min  = " << deltaV_min << endl;
   cout << "grid_resolution = " << resolution << endl;
+  cout << "bsite_cutoff = " << bsite_cutoff << endl;
   //cout << "deltaGP1  = " << deltaGP1 << endl;
   //cout << "deltaGP2  = " << deltaGP2 << endl;
   return true;
@@ -275,6 +281,7 @@ private:
   vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
   vector<AtomNumber> polaratoms;//list of polar atoms used for CV
   vector<AtomList> allatoms;// List of atom indices and apolar/polar values
+  vector<unsigned> new_bsite; //This is updated with the atoms that are close to the grid every time JEDI is calculated
   vector<Vector> ref_pos;// coordinates binding site at t_ref for alignment.
   double refsite_com[3];//reference coordinates of the center of mass of the binding site region
   double grid_ref_cog[3];//reference coordinates of the center of geometry of the grid at t_ref
@@ -643,7 +650,7 @@ print_benchmark(false)
   ofstream wfile;
   wfile.open(summary_file.c_str());
   //wfile << "#step \t JEDI \t Vdrug_like \t Va \t Ha \t MaxDerivIdx \t max_deriv_x \t max_deriv_y \t max_deriv_z \t MaxDerivIdx_* \t max_deriv_x* \t max_deriv_y* \t max_deriv_z* \t rmsd" << endl;
-  wfile << "#step JEDI Vdrug_like Va Ha JEDI_avg JEDI_sd MaxDerivIdx max_deriv_x max_deriv_y max_deriv_z MaxDerivIdx_* max_deriv_x* max_deriv_y* max_deriv_z* rmsd" << endl;
+  wfile << "#step JEDI Vdrug_like Va Ha JEDI_avg JEDI_sd MaxDerivIdx max_deriv_x max_deriv_y max_deriv_z MaxDerivIdx_* max_deriv_x* max_deriv_y* max_deriv_z* rmsd NumAtoms" << endl;
   wfile.close();
   
   if (benchmark and print_benchmark)
@@ -653,6 +660,12 @@ print_benchmark(false)
    wfile << "Grid JEDI Derivatives Derivatives_correction Total" << endl;
    wfile.close();
   }
+
+  cout << "Initialising new_bsite vector" << endl;
+  for (unsigned j=0; j<atomstoRequest.size(); j++)
+     {
+      new_bsite.push_back(j);
+     }
 
   cout << "*** Completed initialisation JEDI collective variable" << endl;
   //exit(0);
@@ -1033,8 +1046,10 @@ void jedi::calculate(){
   unsigned n_apolarpolar = n_apolar + polaratoms.size();
   double site_com[3] = {0.0, 0.0 ,0.0};
   double site_mass=0.0;
-  for (unsigned j =0; j < n_apolarpolar ; j++)
+  
+  for (unsigned l=0; l < new_bsite.size() ; l++)
     {
+      unsigned j=new_bsite[l]; // locate index of atom in new_bsite
       double j_mass = getMass(j);
       Vector j_pos = getPosition(j);
       site_com[0] += j_mass * j_pos[0];
@@ -1069,8 +1084,10 @@ void jedi::calculate(){
 
   double mov_mass_tot=0.0;
 
-  for (unsigned i=0; i < n_apolarpolar ; ++i)
+   //JCN Oct2019 FIXME: manuscript gives index i to grid points and index j to atoms. Here we should use j not i
+  for (unsigned l=0; l < new_bsite.size() ; ++l)
     {
+      unsigned i=new_bsite[l];
       ref_xlist[i][0] = ref_pos[i][0];//FIXME change calculate_rotation_rmsd args to take directly vector in
       ref_xlist[i][1] = ref_pos[i][1];
       ref_xlist[i][2] = ref_pos[i][2];
@@ -1182,8 +1199,6 @@ void jedi::calculate(){
       //cout << "grid_x , grid_y , grid_z" << grid_x[i] << "," << grid_y[i] << "," << grid_z[i] << endl; 
     }
 
-
-
   // Note: do not update too frequently, otherwise fitting algorithm doesn't
   // detect noticeable rotation??
   int step= getStep();
@@ -1198,12 +1213,12 @@ void jedi::calculate(){
     {
       //cout << "step " << step << " Updating reference grid positions " << endl;
       for (unsigned i=0; i < n_apolarpolar ; ++i)
-	{
-	  Vector i_pos = getPosition( i );
-	  ref_pos[i][0] = i_pos[0];
-	  ref_pos[i][1] = i_pos[1];
-	  ref_pos[i][2] = i_pos[2];
-	}
+	      {
+	       Vector i_pos = getPosition( i ); //Here we want ALL the atoms of the bsite and then we pick only the ones in new_bsite
+	       ref_pos[i][0] = i_pos[0];
+	       ref_pos[i][1] = i_pos[1];
+	       ref_pos[i][2] = i_pos[2];
+	     }
       refsite_com[0] = site_com[0];
       refsite_com[1] = site_com[1];
       refsite_com[2] = site_com[2];
@@ -1211,6 +1226,10 @@ void jedi::calculate(){
       grid_ref_cog[1] = new_grid_cog_y;
       grid_ref_cog[2] = new_grid_cog_z;
     }
+
+  //Finally we clear new_bsite to be able to refill it
+  new_bsite.clear();
+
   //exit(0);
   //cout << "*** Getting ready for STEP 2" << endl;
   gettimeofday(&time_grid, NULL);
@@ -1223,6 +1242,8 @@ void jedi::calculate(){
   //-----------------------------------------
   //cout << " Starting Step 2 where JEDI score is calculated " << endl;
   // Hard cutoff on grid point - CV atom
+  //double cutoff=params.bsite_cutoff;
+  double bsite_cutoff2 = pow(params.bsite_cutoff,2);
   double cutoff=0.6;
   double cutoff2=cutoff*cutoff;
   double volume=0.0;
@@ -1246,6 +1267,17 @@ void jedi::calculate(){
 	  // FIXME No PBC check !!  Code may need changes for PBC
 	  // FIXME avoid sqrt if possible
 	  double mod_rij2   = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+
+    if (mod_rij2 <= bsite_cutoff2)
+     {
+      //if (!binary_search(new_bsite.begin(), new_bsite.end(), j)) //This may be faster but only works with sorted vectors
+      if (find(new_bsite.begin(), new_bsite.end(),j)==new_bsite.end())
+      {
+       //cout << "Adding element " << j << " to new_bsite"<<endl;
+       new_bsite.push_back(j);
+      }
+     }
+
 	  if (mod_rij2 > cutoff2)
 	    continue;
 	  double mod_rij= sqrt(mod_rij2);
@@ -2096,7 +2128,7 @@ void jedi::calculate(){
             << " " << jedi_avg << " " << jedi_sd
 	    << " " << max_der_idx_raw << " " << max_d_Jedi_der_raw[0] << " " << max_d_Jedi_der_raw[1] << " " << max_d_Jedi_der_raw[2]  
 	    << " " << max_der_idx << " " << max_d_Jedi_der[0] << " " << max_d_Jedi_der[1] << " " << max_d_Jedi_der[2] 
-	    << " " << rmsd << endl;
+	    << " " << rmsd << " " << new_bsite.size() << endl;
       wfile.close();
     }
 
