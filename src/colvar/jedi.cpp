@@ -1075,8 +1075,8 @@ void jedi::calculate(){
   // Initialise data to pass
   // JM: FIXME ISO C++ compliant init for 2D array that is compatible with
   // input of  calculate_rotation_rmsd(..)
-  double ref_xlist[n_apolarpolar][3];//get this one directly from object
-  double mov_xlist[n_apolarpolar][3];
+  double ref_xlist[new_bsite.size()][3];//get this one directly from object
+  double mov_xlist[new_bsite.size()][3];
   double mov_com[3] = {0.0,0.0,0.0};
   double mov_to_ref[3];
   double rotmat[3][3];
@@ -1088,15 +1088,15 @@ void jedi::calculate(){
   for (unsigned l=0; l < new_bsite.size() ; ++l)
     {
       unsigned i=new_bsite[l];
-      ref_xlist[i][0] = ref_pos[i][0];//FIXME change calculate_rotation_rmsd args to take directly vector in
-      ref_xlist[i][1] = ref_pos[i][1];
-      ref_xlist[i][2] = ref_pos[i][2];
+      ref_xlist[l][0] = ref_pos[i][0];//FIXME change calculate_rotation_rmsd args to take directly vector in
+      ref_xlist[l][1] = ref_pos[i][1];
+      ref_xlist[l][2] = ref_pos[i][2];
       //cout << ref_pos[i][0] << " " << ref_pos[i][1] << " " << ref_pos[i][2] <<endl;
       //exit();
       Vector i_pos = getPosition( i );
-      mov_xlist[i][0] = i_pos[0];
-      mov_xlist[i][1] = i_pos[1];
-      mov_xlist[i][2] = i_pos[2];
+      mov_xlist[l][0] = i_pos[0];
+      mov_xlist[l][1] = i_pos[1];
+      mov_xlist[l][2] = i_pos[2];
       double i_mass = getMass( i );//FIXME. Constant. Cache for optimisation?
       mov_mass_tot += i_mass;
       mov_com[0] += i_mass * i_pos[0];
@@ -1137,7 +1137,7 @@ void jedi::calculate(){
   rotmat[2][1] = 0.0;
   rotmat[2][2] = 1.0;
 
-  calculate_rotation_rmsd( ref_xlist, mov_xlist, n_apolarpolar, mov_com, mov_to_ref, rotmat, &rmsd  );
+  calculate_rotation_rmsd( ref_xlist, mov_xlist, new_bsite.size(), mov_com, mov_to_ref, rotmat, &rmsd  );
 
   // Here mov_xlist should end up centered on origin
   //ofstream wfile001;
