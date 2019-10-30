@@ -285,6 +285,7 @@ private:
   vector<Vector> site_positions; // Coordinates of the specified ligand (if any)
   jediparameters params;// parameters druggability estimator
   vector<vector<int> > neighbors;//list of grid indices that are neighbors of a given grid point
+  int max_neighbors; //maximum number of neighbors that a given grid point can have
   string summary_file;//path to output file
   int stride;//frequency of output (in timesteps) to summary file;
   int gridstride;//frequency of output (in timestep) of a grid file;
@@ -633,7 +634,11 @@ print_benchmark(false)
   //cout << " grid has ? elements " << gridnumbers.size() << endl;
   neighbors = init_grid_neighbors( grid_positions,
   				   params.GP_min, params.GP_max);
-
+  max_neighbors=0;
+  for (unsigned i=0; i<neighbors.size();i++)
+   {
+    if(neighbors[i].size()>max_neighbors) max_neighbors=neighbors[i].size();
+   }
   //Now center grid on origin by removing COG
   center_grid( grid_positions, grid_ref_cog );
   //cout << "Grid ref cog " << grid_ref_cog[0] << " " << grid_ref_cog[1] << " " << grid_ref_cog[2] << endl;
@@ -1293,7 +1298,7 @@ void jedi::calculate(){
 	  double term1 = s_off(1.0,min_dist_list[k],params.CC2_min,params.deltaCC2);
 	  exposure_score += term1;
 	}
-      exposure[i] = exposure_score/neighbors[i].size();
+      exposure[i] = exposure_score/max_neighbors;
       s_on_exposure[i]  = s_on( 1.0, exposure[i], params.Emin, params.deltaE);
       //cout << " i " << i << " neighbors " << neighbors_i.size() << " exposure " << exposure_score << " s_on_exposure " << s_on_exposure[i] << endl;
       //s_on_exposure[i] = 1.0;
@@ -1539,9 +1544,9 @@ void jedi::calculate(){
 	      d_exposure_zpj += allterms_z;
 	    }
     //Normalisation constant is the total number of neighbours  
-    d_exposure_xpj/=neighbors[i].size();
-    d_exposure_ypj/=neighbors[i].size();
-    d_exposure_zpj/=neighbors[i].size();
+    d_exposure_xpj/=max_neighbors;
+    d_exposure_ypj/=max_neighbors;
+    d_exposure_zpj/=max_neighbors;
 
 	  d_exposure_xpj *= (1.0/params.deltaCC2);
 	  d_exposure_ypj *= (1.0/params.deltaCC2);
