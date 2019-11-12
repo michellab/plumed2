@@ -1020,7 +1020,7 @@ void jedi::calculate(){
   exposure.reserve(size_grid);
 
   double Vg   = pow(params.resolution,3); // grid point volume nm^3
-  double beta = 5.0;
+  double beta = params.theta;
   double min_modr = 0.10;// that's 1.0 Angstrom
 
   //cout << "*** Beginning calculation of JEDI collective variable" << endl;
