@@ -277,6 +277,7 @@ private:
   bool pbc;
   bool benchmark;
   bool print_benchmark;
+  bool no_deriv_correct;
   //for JEDI
   vector<AtomNumber> apolaratoms;//list of apolar atoms used for CV
   vector<AtomNumber> polaratoms;//list of polar atoms used for CV
@@ -330,6 +331,7 @@ void jedi::registerKeywords(Keywords& keys)
   keys.add("optional", "DUMPDERIVATIVES","frequency of output of derivatives.");
   keys.add("optional", "NTHREADS","Number of OMP threads to use");
   keys.addFlag("PRINT_BENCHMARK",false,"Print the benchmark in a file");
+  keys.addFlag("NO_DERIV_CORRECT",false,"DO NOT CORRECT DERIVATIVES");
   //keys.add("compulsory","GRIDFOLDER","jedi-grids", "folder where jedi grids will be output.");
   //  keys.addFlag("JEDI_DEFAULT_OFF_FLAG",false,"flags that are by default not performed should be specified like this");
   //  keys.addFlag("JEDI_DEFAULT_ON_FLAG",true,"flags that are by default performed should be specified like this");
@@ -340,7 +342,8 @@ jedi::jedi(const ActionOptions&ao):
 PLUMED_COLVAR_INIT(ao),
 pbc(true),
 benchmark(false),
-print_benchmark(false)
+print_benchmark(false),
+no_deriv_correct(false)
 {
   parse("SIGMA", delta);//FIXME: Where is this set//used?? Plumed convention??;
   //string reference_file;
@@ -411,7 +414,12 @@ print_benchmark(false)
   parseFlag("PRINT_BENCHMARK",print_benchmark);
   if (print_benchmark)
       cout << "Benchmark data will be printed in file performance.txt";
+
+  parseFlag("NO_DERIV_CORRECT",no_deriv_correct);
+  if (no_deriv_correct)
+     cout << "Derivatives are not going to be corrected. Only for experimental use." << endl;
   
+
   checkRead();
   
   cout << "*** Initialisation of JEDI collective variable ***" << endl;
@@ -1802,6 +1810,9 @@ void jedi::calculate(){
       sum_d_Jedi_torque_ypj += d_Jedi_torque_ypj;
       sum_d_Jedi_torque_zpj += d_Jedi_torque_zpj;
     }
+  vector<double> d_jedi_dx_nocorrection= d_Jedi_xpj_vec;
+  vector<double> d_jedi_dy_nocorrection= d_Jedi_ypj_vec;
+  vector<double> d_jedi_dz_nocorrection= d_Jedi_zpj_vec;
   gettimeofday(&time_derivatives, NULL);
   //exit(0);
 
@@ -2020,33 +2031,34 @@ void jedi::calculate(){
 
   for (unsigned j=0; j < n_apolarpolar;j++)
     {
-      double d_Jedi_dx=d_Jedi_xpj_vec[j];
-      double d_Jedi_dy=d_Jedi_ypj_vec[j];
-      double d_Jedi_dz=d_Jedi_zpj_vec[j];
-      double norm2=d_Jedi_dx*d_Jedi_dx+d_Jedi_dy*d_Jedi_dy+d_Jedi_dz*d_Jedi_dz;
-      double norm=sqrt(norm2);
-      if (norm > max_norm)
-	{
-	  max_norm=norm;
-          max_der_idx = allatoms[j].atom.index();
-          /*
-	  if (j < allatoms[j].polarity=='a')
-	    max_der_idx = apolaratoms[j].index();
-	  else
-	    max_der_idx = polaratoms[j-n_apolar].index();
-           */
-	  max_d_Jedi_der[0] = d_Jedi_dx;
-	  max_d_Jedi_der[1] = d_Jedi_dy;
-	  max_d_Jedi_der[2] = d_Jedi_dz;
-	}
-      setAtomsDerivatives(j,Vector(d_Jedi_dx,d_Jedi_dy,d_Jedi_dz));
-      /*unsigned pdb_idx = 0;
-      if (j < n_apolar)
-	pdb_idx = apolaratoms[j].index();
+      double d_Jedi_dx;
+      double d_Jedi_dy;
+      double d_Jedi_dz;
+      double norm2;
+      double norm;
+      if (!no_deriv_correct)
+      {
+      d_Jedi_dx=d_Jedi_xpj_vec[j];
+      d_Jedi_dy=d_Jedi_ypj_vec[j];
+      d_Jedi_dz=d_Jedi_zpj_vec[j];
+      }
       else
-	pdb_idx = polaratoms[j-n_apolar].index();
-      cout << "***atom j "  << std::fixed << std::setprecision(5) << j << " ( " << pdb_idx << " ) " << d_Jedi_dx << " " << d_Jedi_dy << " " << d_Jedi_dz << endl;
-      */
+      {
+       d_Jedi_dx=d_jedi_dx_nocorrection[j];
+       d_Jedi_dy=d_jedi_dy_nocorrection[j];
+       d_Jedi_dz=d_jedi_dx_nocorrection[j];
+      }
+      norm2=d_Jedi_dx*d_Jedi_dx+d_Jedi_dy*d_Jedi_dy+d_Jedi_dz*d_Jedi_dz;
+      norm=sqrt(norm2);
+      if (norm > max_norm)
+    	{
+	     max_norm=norm;
+       max_der_idx = allatoms[j].atom.index();   
+	     max_d_Jedi_der[0] = d_Jedi_dx;
+	     max_d_Jedi_der[1] = d_Jedi_dy;
+	     max_d_Jedi_der[2] = d_Jedi_dz;
+	    }
+      setAtomsDerivatives(j,Vector(d_Jedi_dx,d_Jedi_dy,d_Jedi_dz));
     }
  gettimeofday(&time_derivatives_correction, NULL);
     
