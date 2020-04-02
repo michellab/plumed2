@@ -59,7 +59,7 @@ vector<double> set_bs_values(vector<Vector> grid_positions,
                              vector<Vector> site_positions,
                              double theta, double Bsmin, double deltaBS);
 
-vector<vector<int>> init_grid_neighbors(vector<Vector> grid_positions,
+vector<vector<int> > init_grid_neighbors(vector<Vector> grid_positions,
                                         double GP_min, double GP_max);
 
 void center_grid(vector<Vector> &grid_positions, double grid_ref_cog[3]);
@@ -291,7 +291,7 @@ private:
   vector<double> grid_s_off_bsi;  //binding site score of grid point (eq 5 term 1 Cuchillo et al. JCTC 2015)
   vector<Vector> site_positions;  // Coordinates of the specified ligand (if any)
   jediparameters params;          // parameters druggability estimator
-  vector<vector<int>> neighbors;  //list of grid indices that are neighbors of a given grid point
+  vector<vector<int> > neighbors;  //list of grid indices that are neighbors of a given grid point
   string summary_file;            //path to output file
   int stride;                     //frequency of output (in timesteps) to summary file;
   int gridstride;                 //frequency of output (in timestep) of a grid file;
@@ -715,11 +715,11 @@ vector<double> set_bs_values(vector<Vector> grid_pos,
   return grid_s_off_bsi;
 }
 
-vector<vector<int>> init_grid_neighbors(vector<Vector> grid_pos,
+vector<vector<int> > init_grid_neighbors(vector<Vector> grid_pos,
                                         double GP_min, double GP_max)
 {
   size_t grid_size = grid_pos.size();
-  vector<vector<int>> neighbors;
+  vector<vector<int> > neighbors;
   neighbors.reserve(grid_size);
 
   for (unsigned i = 0; i < grid_pos.size(); i++)
@@ -1485,7 +1485,7 @@ void jedi::calculate()
       //cutoff
       if (dij2 > cutoff2)
       {
-        dij_vec[i] = cutoff;
+        dij_vec[i] = sqrt(dij2);
         continue;
       }
       double dij = sqrt(dij2);
@@ -1662,9 +1662,21 @@ void jedi::calculate()
 
       // d_Hi_xpj
       double dij = dij_vec[i];
-      double d_rij_xpj = -(grid_x[i] - xj) / dij; //Or store during previous loop?
-      double d_rij_ypj = -(grid_y[i] - yj) / dij;
-      double d_rij_zpj = -(grid_z[i] - zj) / dij;
+      double d_rij_xpj;
+      double d_rij_ypj;
+      double d_rij_zpj;
+      if (dij>cutoff)
+      {
+        d_rij_xpj = 0; //Or store during previous loop?
+        d_rij_ypj = 0;
+        d_rij_zpj = 0;
+      }
+      else
+      {
+        d_rij_xpj = -(grid_x[i] - xj) / dij; //Or store during previous loop?
+        d_rij_ypj = -(grid_y[i] - yj) / dij;
+        d_rij_zpj = -(grid_z[i] - zj) / dij; 
+      }
       double ai = activity[i];
       double d_Soffrij_m = ds_off_dm(ai, dij, params.r_hydro, params.deltar_hydro);
       double d_Soffrij_ai = ds_off_dk(ai, dij, params.r_hydro, params.deltar_hydro);
@@ -1698,12 +1710,9 @@ void jedi::calculate()
       double d_Hi_zpj = 0.0;
       if (term1 > 0)
       {
-        double num_x = term1 * d_apolari_xpj -
-                       apolar * (d_apolari_xpj + d_polari_xpj);
-        double num_y = term1 * d_apolari_ypj -
-                       apolar * (d_apolari_ypj + d_polari_ypj);
-        double num_z = term1 * d_apolari_zpj -
-                       apolar * (d_apolari_zpj + d_polari_zpj);
+        double num_x=polarity[i]*d_apolari_xpj-apolarity[i]*d_polari_xpj;
+        double num_y=polarity[i]*d_apolari_ypj-apolarity[i]*d_polari_ypj;
+        double num_z=polarity[i]*d_apolari_zpj-apolarity[i]*d_polari_zpj;
         double den = term1 * term1;
         d_Hi_xpj = num_x / den;
         d_Hi_ypj = num_y / den;
