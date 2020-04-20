@@ -59,10 +59,10 @@ class SITH : public Bias
 {
 private:
   int sithstride;   // Stride to perform the cv clustering and generate a new biasing potential
-  int cvstride;     // stride to print the value of the cvs in the cv file (for postprocessing)
   string sithfile;  // The name of the file that will contain the hyperbins found at each sithstride
   string cvfile;    // The name of the file that will contain the cvs involved in the taboo search
   double dist;      //Distance in CV space to generate a new hyperbin
+  double kappa;     //Factor that multiplies the population of the bins
   bool walkers_mpi; // multiple walkers same way as metaD
 
 public:
@@ -78,25 +78,26 @@ void SITH::registerKeywords(Keywords &keys)
   Bias::registerKeywords(keys);
   keys.use("ARG");
   keys.add("compulsory", "SITHSTRIDE", "Frequency with which the snapshots are clustered and the bias is updated");
-  keys.add("compulsory", "CVSTRIDE", "stride to print the value of the cvs in the cv file (for postprocessing)");
   keys.add("compulsory", "SITHFILE", "The name of the file that will contain the clusters found at each sithstride");
   keys.add("compulsory", "CVFILE", "The name of the file that will contain the cvs involved in the taboo search (read+write)");
   keys.add("compulsory", "DIST", "Distance in CV space to generate a new hyperbin");
+  keys.add("compulsory", "KAPPA_FACTOR", "Factor that multiplies the population of the bins");
   keys.addFlag("WALKERS_MPI", false, "Switch on MPI version (only version available) of multiple walkers");
   componentsAreNotOptional(keys);
   keys.addOutputComponent("bias", "default", "the instantaneous value of the bias potential");
   keys.addOutputComponent("force2", "default", "the instantaneous value of the squared force due to this bias potential");
 }
 
-SITH::SITH(const ActionOptions &ao) : PLUMED_BIAS_INIT(ao),
-                                      walkers_mpi(false)
+SITH::SITH(const ActionOptions &ao) : 
+PLUMED_BIAS_INIT(ao),
+walkers_mpi(false)
 {
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parse("SITHSTRIDE", sithstride);
-  parse("CVSTRIDE", cvstride);
   parse("CVFILE", cvfile);
   parse("SITHFILE", sithfile);
   parse("DIST", dist);
+  parse("KAPPA_FACTOR", kappa);
   parseFlag("WALKERS_MPI", walkers_mpi);
   checkRead();
 
@@ -131,7 +132,7 @@ SITH::SITH(const ActionOptions &ao) : PLUMED_BIAS_INIT(ao),
   if (rank == 0)
   {
     printf("Initialising SITH sampling protocol\n");
-    printf("The CVs are going to be printed every %i steps.\n", cvstride);
+    printf("The CVs are going to be printed every %i steps.\n", sithstride);
     printf("Bias is going to be updated every %i steps.\n", sithstride);
 
     ofstream wfile;
@@ -143,25 +144,13 @@ SITH::SITH(const ActionOptions &ao) : PLUMED_BIAS_INIT(ao),
     }
     wfile << endl;
     wfile.close();
-
-    ofstream clustfile;
-    clustfile.open(sithfile.c_str(), std::ios_base::app);
-    clustfile << "Time_print Rank_clust Time_bin Population "; //Time_print is the time at which it has been printed, Time_bin is the time of the first snapshot in this bin
-    for (int i = 0; i < getNumberOfArguments(); i++)
-    {
-      clustfile << "CV_" << i << " "; //How do you get the CV labels?
-    }
-    clustfile << endl;
-    clustfile.close();
   }
 }
 
-vector<unsigned> bins; // Contains the population of each bin
-vector<unsigned> bins_step; // Contains the step number of each bin center
+vector<unsigned> bins;      // Contains the population of each bin
+vector<unsigned> bins_time; // Contains the time at which each bin center was detected
 vector<unsigned> bins_rank; // Contains the mpi rank of each bin center
-unsigned n_bins;
 vector<vector<double> > bin_values;
-
 
 void SITH::calculate()
 {
@@ -180,11 +169,7 @@ void SITH::calculate()
   double dist2 = pow(dist, 2);
   int step = getStep();
   double time = getTime();
-
-  const double pi = 3.1415926535897;
-  double ene = 0.0;
-  double totf2 = 0.0;
-  double f = 0.;
+  
 
   vector<double> cv;
   vector<double> cv_m;
@@ -193,17 +178,13 @@ void SITH::calculate()
     cv.push_back(getArgument(i));
     cv_m.push_back(getArgument(i)); //this is the one that passed through MPI
   }
-  vector<double> potentials(getNumberOfArguments(), 0);
-  vector<double> forces(getNumberOfArguments(), 0);
-
-  
 
   ////////////////////////////////////////////////
   //                                            //
   // UPDATE THE HYPERBINS AND THEIR POPULATIONS //
   //                                            //
   ////////////////////////////////////////////////
-  int mod = step % cvstride;
+  int mod = step % sithstride;
   if (mod == 0)
   {
     // Print cvfile: Rank, Time, cv_1, cv_2...
@@ -212,18 +193,18 @@ void SITH::calculate()
     wfile << rank << " " << time << " ";
     for (int i = 0; i < getNumberOfArguments(); i++)
     {
-      double cv = getArgument(i);
-      wfile << cv << " ";
+      double cv_i = getArgument(i);
+      wfile << cv_i << " ";
     }
     wfile << endl;
     wfile.close();
-    
+
     //send the value of the cvs to rank 0
-    for (unsigned i=0; i<getNumberOfArguments();i++)
+    for (unsigned i = 0; i < getNumberOfArguments(); i++)
     {
-    multi_sim_comm.Isend(cv_m[i],rank,0);
+      multi_sim_comm.Isend(cv_m[i], rank, 0);
     }
-    
+
     if (multi_sim_comm.Get_rank() == 0)
     {
       //At the first step, generate a bin with the first snapshot
@@ -231,12 +212,27 @@ void SITH::calculate()
       {
         bins.push_back(nranks);
         bin_values.push_back(cv);
+        bins_rank.push_back(0);
+        bins_time.push_back(time);
+        cout << "Bin generated at time 0, rank " << rank << " ";
+        for (unsigned i=0; i<getNumberOfArguments(); i++)
+        {
+          cout << bin_values[0][i] << " ";
+        }
+        cout << endl; 
       }
       //Afterwards, add the snapshot to the relevant bin or generate a new bin
       else
       {
         //Assume the snapshot will make a new bin
         bool new_bin = true;
+        cout << "CVs received from rank 0 at time " << getTime() << ": ";
+        for (unsigned i = 0; i < getNumberOfArguments(); i++)
+          {
+           cout << getArgument(i) << " ";
+           //cout << cv[i] << " ";
+          }
+        cout << endl;
         for (unsigned j = 0; j < bins.size(); j++)
         {
           //Measure the distance to the bin
@@ -256,12 +252,22 @@ void SITH::calculate()
         {
           bins.push_back(1);
           bin_values.push_back(cv);
-          n_bins = bins.size();
+          bins_rank.push_back(0);
+          bins_time.push_back(time);
         }
 
         //Do the same for ranks 1 to m
-        for (unsigned m = 1; m < nranks; m++)
+        if (nranks > 1)
         {
+         for (unsigned m = 1; m < nranks; m++)
+         {
+          cout << "CVs received from rank " << m << " ";
+          for (unsigned i = 0; i < getNumberOfArguments(); i++)
+          {
+           multi_sim_comm.Recv(cv_m[i], m, 0);
+           cout << cv_m[i] << " ";
+          }
+          cout << endl;
           //Assume the snapshot will make a new bin
           bool new_bin = true;
           for (unsigned j = 0; j < bins.size(); j++)
@@ -270,9 +276,9 @@ void SITH::calculate()
             double r2 = 0;
             for (unsigned i = 0; i < getNumberOfArguments(); i++)
             {
-              multi_sim_comm.Recv(cv_m[i],m,0);
               r2 += pow((cv_m[i] - bin_values[j][i]), 2);
             }
+            cout << endl;
             //if it is within bin boundaries, add 1 element to the current bin
             if (r2 <= dist2)
             {
@@ -284,20 +290,49 @@ void SITH::calculate()
           {
             bins.push_back(1);
             bin_values.push_back(cv_m);
+            bins_rank.push_back(m);
+            bins_time.push_back(time);
           }
+         }
         }
       }
     }
     //Bring the bins from rank 0
-    multi_sim_comm.Bcast(n_bins, 0);
-    for (unsigned j=0; j<bins.size();j++)
+    for (unsigned j = 0; j < bins.size(); j++)
     {
       multi_sim_comm.Bcast(bins[j], 0);
-      for (unsigned i=0; i<getNumberOfArguments();i++)
+      for (unsigned i = 0; i < getNumberOfArguments(); i++)
       {
-       multi_sim_comm.Bcast(bin_values[j][i], 0);
+        multi_sim_comm.Bcast(bin_values[j][i], 0);
       }
     }
+
+    //Print information about the hyperbins in sithfile
+    ofstream clustfile;
+    string sithfilename;
+    sithfilename = sithfile + "-step-";
+    stringstream out;
+    out << sithfilename << getStep() << ".csv";
+    string sithfile_step=out.str();
+    clustfile.open(sithfile_step.c_str(), std::ios_base::app);
+    clustfile << "Time_print Rank_clust Time_bin Population "; //Time_print is the time at which it has been printed, Time_bin is the time of the first snapshot in this bin
+    for (int i = 0; i < getNumberOfArguments(); i++)
+    {
+      clustfile << "CV_" << i << " "; //How do you get the CV labels?
+    }
+    clustfile << endl;
+
+    for (int j = 0; j < bins.size(); j++)
+    {
+      clustfile << time << " " << bins_rank[j] << " " << bins_time[j] << " " << bins[j] << " ";
+      for (unsigned i = 0; i < getNumberOfArguments(); i++)
+      {
+        clustfile << bin_values[j][i] << " ";
+      }
+      clustfile << endl;
+    }
+    clustfile.close();
+
     multi_sim_comm.Barrier(); //wait for everyone else
   }
 
@@ -305,56 +340,71 @@ void SITH::calculate()
   //                                            //
   // GENERATE THE BIASING POTENTIAL AND FORCE   //
   //                                            //
-  ////////////////////////////////////////////////
+  //////////////////////////////////////////////// 
+
 
   //Get the distance between the current frame and all bins
   vector<double> r2_bins(bins.size(), 0);
   vector<double> r_bins(bins.size(), 0);
   vector<double> drbins(bins.size(), 0);
-  for (unsigned j=0; j<n_bins;j++)
+  for (unsigned j = 0; j < bins.size(); j++)
   {
-    r2_bins[j]=0;
-    r_bins[j]=0;
+    r2_bins[j] = 0;
+    r_bins[j] = 0;
+    
     for (unsigned i = 0; i < getNumberOfArguments(); i++)
     {
       r2_bins[j] += pow((cv[i] - bin_values[j][i]), 2);
     }
-    r_bins[j]=sqrt(r2_bins[j]);
-    drbins[j]=1/(2*r_bins[j]);
+    r_bins[j] = sqrt(r2_bins[j]);
+    //drbins[j] = 1 / (2 * r_bins[j]);
   }
 
   //Calculate the biasing potential and its derivative for each bin
-  vector<double> V_r(bins.size(),0.);
-  vector<double> dV_dr(bins.size(),0.);
+  vector<double> V_r(bins.size(), 0.);
+  vector<double> dV_dr(bins.size(), 0.);
+  double ene = 0.0; // The total bias
+  
+  for (unsigned j = 0; j < bins.size(); j++)
+  {
+    cout << "Bin " << j << ": ";
+    for (unsigned i=0; i<getNumberOfArguments();i++)
+    {
+      cout << bin_values[j][i] << " ";
+    }
+    cout << "Distance " << r_bins[j] << " ";
+    double k_j = kappa*bins[j];
+    //V_r[j] = k_j * pow((r_bins[j] - dist), 2);
+    V_r[j]=k_j*exp(-pow(r_bins[j],2));
+    cout << " Potential Energy: " << V_r[j] << " ";
+    ene+=V_r[j];
+    //dV_dr[j] = V_r[j] * (-2*r_bins[j]) * drbins[j];
+    dV_dr[j]=-V_r[j]; // This works ONLY because the gaussian is centered at zero
+  }
+  
+  
+  // Calculate the the force with respect to each CV
+    
+  vector<double> forces(getNumberOfArguments(), 0);
+  cout << "Forces ";
   for (unsigned i = 0; i < getNumberOfArguments(); i++)
   {
-    for (unsigned j=0; j<n_bins;j++)
+    for (unsigned j = 0; j < bins.size(); j++)
     {
-      if (r_bins[j]>dist)
-          continue;
-      double k_j=bins[j];
-      V_r[j]=k_j*pow((r_bins[j]-dist),2);
-      dV_dr[j]=2*k_j*(r_bins[j]-dist)*drbins[j];
+      if (r_bins[j] > dist)
+      continue;
+      //Missing the middle bit 2*r_bins[j]*1/(2*r_bins[j]) because they cancel out
+      forces[i]-=dV_dr[j]*2*(cv[i]-bin_values[j][i]); 
     }
+    cout << forces[i] << " ";
   }
+  cout << endl;
 
-  // Calculate the potential and the force with respect to each CV
-  vector<vector<double> > potFor(2);
-  vector<double> V_cv(getNumberOfArguments(),0.);
-  vector<double> dV_cv(getNumberOfArguments(),0.);
-  for (unsigned i=0; i<getNumberOfArguments();i++)
+ 
+  double totf2 = 0.0;
+  double f = 0.;
+  for (unsigned i = 0; i < getNumberOfArguments(); ++i)
   {
-   for (unsigned j=0; j<bins.size();j++)
-   {
-    
-   }
-  }
-
-
-  
-  for (unsigned i = 0; i < getNumberOfArguments(); ++i) // It only iterates one time, but I still don't know how to
-  {
-    ene += potentials[i];
     f = forces[i];
     totf2 += f * f;
     setOutputForce(i, f);
