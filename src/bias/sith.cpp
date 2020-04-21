@@ -36,6 +36,7 @@
 #include <limits>
 #include <iterator>
 #include <fstream>
+#include <math.h>
 
 // introducing openMP (OMP) parallelisation
 #ifdef _OPENMP
@@ -59,6 +60,7 @@ class SITH : public Bias
 {
 private:
   int sithstride;   // Stride to perform the cv clustering and generate a new biasing potential
+  int binstride;    // Frequency with which the bins are printed in SITHFILE
   string sithfile;  // The name of the file that will contain the hyperbins found at each sithstride
   string cvfile;    // The name of the file that will contain the cvs involved in the taboo search
   double dist;      //Distance in CV space to generate a new hyperbin
@@ -77,9 +79,10 @@ void SITH::registerKeywords(Keywords &keys)
 {
   Bias::registerKeywords(keys);
   keys.use("ARG");
+  keys.add("compulsory", "BINSTRIDE", "Frequency with which the bins are printed in SITHFILE");
   keys.add("compulsory", "SITHSTRIDE", "Frequency with which the snapshots are clustered and the bias is updated");
   keys.add("compulsory", "SITHFILE", "The name of the file that will contain the clusters found at each sithstride");
-  keys.add("compulsory", "CVFILE", "The name of the file that will contain the cvs involved in the taboo search (read+write)");
+  keys.add("compulsory", "CVFILE", "Name of the file where the CVs are printed every BINSTRIDE steps");
   keys.add("compulsory", "DIST", "Distance in CV space to generate a new hyperbin");
   keys.add("compulsory", "KAPPA_FACTOR", "Factor that multiplies the population of the bins");
   keys.addFlag("WALKERS_MPI", false, "Switch on MPI version (only version available) of multiple walkers");
@@ -94,6 +97,7 @@ walkers_mpi(false)
 {
   // Note sizes of these vectors are automatically checked by parseVector :-)
   parse("SITHSTRIDE", sithstride);
+  parse("BINSTRIDE", binstride);
   parse("CVFILE", cvfile);
   parse("SITHFILE", sithfile);
   parse("DIST", dist);
@@ -187,18 +191,6 @@ void SITH::calculate()
   int mod = step % sithstride;
   if (mod == 0)
   {
-    // Print cvfile: Rank, Time, cv_1, cv_2...
-    ofstream wfile;
-    wfile.open(cvfile.c_str(), std::ios_base::app);
-    wfile << rank << " " << time << " ";
-    for (int i = 0; i < getNumberOfArguments(); i++)
-    {
-      double cv_i = getArgument(i);
-      wfile << cv_i << " ";
-    }
-    wfile << endl;
-    wfile.close();
-
     //send the value of the cvs to rank 0
     for (unsigned i = 0; i < getNumberOfArguments(); i++)
     {
@@ -214,25 +206,12 @@ void SITH::calculate()
         bin_values.push_back(cv);
         bins_rank.push_back(0);
         bins_time.push_back(time);
-        cout << "Bin generated at time 0, rank " << rank << " ";
-        for (unsigned i=0; i<getNumberOfArguments(); i++)
-        {
-          cout << bin_values[0][i] << " ";
-        }
-        cout << endl; 
       }
       //Afterwards, add the snapshot to the relevant bin or generate a new bin
       else
       {
         //Assume the snapshot will make a new bin
         bool new_bin = true;
-        cout << "CVs received from rank 0 at time " << getTime() << ": ";
-        for (unsigned i = 0; i < getNumberOfArguments(); i++)
-          {
-           cout << getArgument(i) << " ";
-           //cout << cv[i] << " ";
-          }
-        cout << endl;
         for (unsigned j = 0; j < bins.size(); j++)
         {
           //Measure the distance to the bin
@@ -261,13 +240,10 @@ void SITH::calculate()
         {
          for (unsigned m = 1; m < nranks; m++)
          {
-          cout << "CVs received from rank " << m << " ";
           for (unsigned i = 0; i < getNumberOfArguments(); i++)
           {
            multi_sim_comm.Recv(cv_m[i], m, 0);
-           cout << cv_m[i] << " ";
           }
-          cout << endl;
           //Assume the snapshot will make a new bin
           bool new_bin = true;
           for (unsigned j = 0; j < bins.size(); j++)
@@ -278,7 +254,6 @@ void SITH::calculate()
             {
               r2 += pow((cv_m[i] - bin_values[j][i]), 2);
             }
-            cout << endl;
             //if it is within bin boundaries, add 1 element to the current bin
             if (r2 <= dist2)
             {
@@ -307,32 +282,47 @@ void SITH::calculate()
       }
     }
 
-    //Print information about the hyperbins in sithfile
-    ofstream clustfile;
-    string sithfilename;
-    sithfilename = sithfile + "-step-";
-    stringstream out;
-    out << sithfilename << getStep() << ".csv";
-    string sithfile_step=out.str();
-    clustfile.open(sithfile_step.c_str(), std::ios_base::app);
-    clustfile << "Time_print Rank_clust Time_bin Population "; //Time_print is the time at which it has been printed, Time_bin is the time of the first snapshot in this bin
-    for (int i = 0; i < getNumberOfArguments(); i++)
+    int binmod=step%binstride;
+    if (binmod == 0)
     {
-      clustfile << "CV_" << i << " "; //How do you get the CV labels?
-    }
-    clustfile << endl;
-
-    for (int j = 0; j < bins.size(); j++)
-    {
-      clustfile << time << " " << bins_rank[j] << " " << bins_time[j] << " " << bins[j] << " ";
-      for (unsigned i = 0; i < getNumberOfArguments(); i++)
+      // Print cvfile: Rank, Time, cv_1, cv_2...
+      ofstream wfile;
+      wfile.open(cvfile.c_str(), std::ios_base::app);
+      wfile << rank << " " << time << " ";
+      for (int i = 0; i < getNumberOfArguments(); i++)
       {
-        clustfile << bin_values[j][i] << " ";
+        double cv_i = getArgument(i);
+        wfile << cv_i << " ";
+      }
+      wfile << endl;
+      wfile.close();
+
+      //Print information about the hyperbins in sithfile
+      ofstream clustfile;
+      string sithfilename;
+      sithfilename = sithfile + "-step-";
+      stringstream out;
+      out << sithfilename << getStep() << ".csv";
+      string sithfile_step = out.str();
+      clustfile.open(sithfile_step.c_str(), std::ios_base::app);
+      clustfile << "Time_print Rank_clust Time_bin Population "; //Time_print is the time at which it has been printed, Time_bin is the time of the first snapshot in this bin
+      for (int i = 0; i < getNumberOfArguments(); i++)
+      {
+        clustfile << "CV_" << i << " "; //How do you get the CV labels?
       }
       clustfile << endl;
-    }
-    clustfile.close();
 
+      for (int j = 0; j < bins.size(); j++)
+      {
+        clustfile << time << " " << bins_rank[j] << " " << bins_time[j] << " " << bins[j] << " ";
+        for (unsigned i = 0; i < getNumberOfArguments(); i++)
+        {
+          clustfile << bin_values[j][i] << " ";
+        }
+        clustfile << endl;
+      }
+      clustfile.close();
+    }
     multi_sim_comm.Barrier(); //wait for everyone else
   }
 
@@ -367,16 +357,9 @@ void SITH::calculate()
   
   for (unsigned j = 0; j < bins.size(); j++)
   {
-    cout << "Bin " << j << ": ";
-    for (unsigned i=0; i<getNumberOfArguments();i++)
-    {
-      cout << bin_values[j][i] << " ";
-    }
-    cout << "Distance " << r_bins[j] << " ";
     double k_j = kappa*bins[j];
     //V_r[j] = k_j * pow((r_bins[j] - dist), 2);
     V_r[j]=k_j*exp(-pow(r_bins[j],2));
-    cout << " Potential Energy: " << V_r[j] << " ";
     ene+=V_r[j];
     //dV_dr[j] = V_r[j] * (-2*r_bins[j]) * drbins[j];
     dV_dr[j]=-V_r[j]; // This works ONLY because the gaussian is centered at zero
@@ -386,7 +369,6 @@ void SITH::calculate()
   // Calculate the the force with respect to each CV
     
   vector<double> forces(getNumberOfArguments(), 0);
-  cout << "Forces ";
   for (unsigned i = 0; i < getNumberOfArguments(); i++)
   {
     for (unsigned j = 0; j < bins.size(); j++)
@@ -396,9 +378,7 @@ void SITH::calculate()
       //Missing the middle bit 2*r_bins[j]*1/(2*r_bins[j]) because they cancel out
       forces[i]-=dV_dr[j]*2*(cv[i]-bin_values[j][i]); 
     }
-    cout << forces[i] << " ";
   }
-  cout << endl;
 
  
   double totf2 = 0.0;
@@ -406,6 +386,11 @@ void SITH::calculate()
   for (unsigned i = 0; i < getNumberOfArguments(); ++i)
   {
     f = forces[i];
+    if (isnan(f))
+    {
+     cout << "Force acting on CV " << i << " is not a number (NaN) on step " << step << ". Exiting." << endl;
+     exit(0);
+    }
     totf2 += f * f;
     setOutputForce(i, f);
   }
